@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">Payments</h2>
+
+  <!-- Payment form -->
+  <form method="POST" action="/payments" class="card p-3 mb-4 shadow-sm">
+    <div class="mb-3">
+      <label for="debt_id" class="form-label">Debt</label>
+      <select id="debt_id" name="debt_id" class="form-select" required>
+        {% for debt in debts %}
+        <option value="{{ debt.id }}">
+          Debt #{{ debt.id }} (Customer {{ debt.customer.name }}) - Balance: {{ debt.balance }}
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="amount" class="form-label">Amount</label>
+      <input type="number" id="amount" name="amount" step="0.01" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="date" class="form-label">Date</label>
+      <input type="date" id="date" name="date" class="form-control" required>
+    </div>
+
+    <button type="submit" class="btn btn-success">Record Payment</button>
+  </form>
+
+  <!-- Payment table -->
+  <h3 class="mb-3">All Payments</h3>
+  <table class="table table-striped table-bordered shadow-sm">
+    <thead class="table-dark">
+      <tr>
+        <th>ID</th>
+        <th>Debt</th>
+        <th>Amount</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+      <tr>
+        <td>{{ p.id }}</td>
+        <td>{{ p.debt_id }}</td>
+        <td>{{ p.amount }}</td>
+        <td>{{ p.date }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

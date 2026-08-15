@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Timos ERP Manager</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <nav>
+        <a href="/">Home</a> |
+        <a href="/customers">Customers</a> |
+        <a href="/debts">Debts</a> |
+        <a href="/sales">Sales</a> |
+        <a href="/inventory">Inventory</a> |
+        <a href="/reports">Reports</a>
+        <a href="/payments">Payments</a>
+        
+    </nav>
+    <hr>
+    {% block content %}{% endblock %}
+</body>
+</html>

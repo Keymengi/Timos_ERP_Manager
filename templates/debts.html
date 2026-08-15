@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Debts</h2>
+
+<form method="POST">
+    <label for="customer_id">Customer:</label>
+    <select name="customer_id" required>
+        {% for customer in customers %}
+        <option value="{{ customer.id }}">{{ customer.name }}</option>
+        {% endfor %}
+    </select>
+
+    <label for="amount">Amount:</label>
+    <input type="number" step="0.01" name="amount" required>
+
+    <label for="due_date">Due Date:</label>
+    <input type="text" name="due_date" placeholder="YYYY-MM-DD">
+
+    <button type="submit">Add Debt</button>
+</form>
+
+<hr>
+
+<h3>Debt List</h3>
+<table border="1" cellpadding="5">
+    <tr>
+        <th>ID</th>
+        <th>Customer</th>
+        <th>Amount</th>
+        <th>Balance</th>
+        <th>Due Date</th>
+        <th>Status</th>
+    </tr>
+    {% for debt in debts %}
+    <tr>
+        <td>{{ debt.id }}</td>
+        <td>{{ debt.customer.name }}</td>
+        <td>{{ debt.amount }}</td>
+        <td>{{ debt.balance }}</td>
+        <td>{{ debt.due_date }}</td>
+        <td>{{ debt.status }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

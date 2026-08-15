@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4">Reports Dashboard</h2>
+
+  <!-- Filter form -->
+  <form method="POST" action="/reports" class="card p-3 mb-4 shadow-sm">
+    <div class="row">
+      <div class="col-md-4">
+        <label for="customer_id" class="form-label">Customer</label>
+        <select id="customer_id" name="customer_id" class="form-select">
+          <option value="">All Customers</option>
+          {% for customer in customers %}
+          <option value="{{ customer.id }}">{{ customer.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label for="start_date" class="form-label">Start Date</label>
+        <input type="date" id="start_date" name="start_date" class="form-control">
+      </div>
+      <div class="col-md-3">
+        <label for="end_date" class="form-label">End Date</label>
+        <input type="date" id="end_date" name="end_date" class="form-control">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary w-100">Filter</button>
+      </div>
+    </div>
+  </form>
+
+  <!-- Summary cards -->
+  <div class="row mb-4">
+    <div class="col-md-4">
+      <div class="card text-center shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Total Payments</h5>
+          <p class="card-text text-success fw-bold">{{ total_payments }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card text-center shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Total Sales</h5>
+          <p class="card-text text-primary fw-bold">{{ total_sales }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="card text-center shadow-sm">
+        <div class="card-body">
+          <h5 class="card-title">Profit</h5>
+          <p class="card-text text-warning fw-bold">{{ profit }}</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Outstanding debts table -->
+  <h3 class="mb-3">Outstanding Debts</h3>
+  <table class="table table-striped table-bordered shadow-sm">
+    <thead class="table-dark">
+      <tr>
+        <th>ID</th>
+        <th>Customer</th>
+        <th>Balance</th>
+        <th>Due Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for debt in outstanding_debts %}
+      <tr>
+        <td>{{ debt.id }}</td>
+        <td>{{ debt.customer.name }}</td>
+        <td>{{ debt.balance }}</td>
+        <td>{{ debt.due_date }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
