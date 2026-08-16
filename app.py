@@ -29,18 +29,21 @@ def home():
 @app.route("/customers", methods=["GET", "POST"])
 def customers():
     if request.method == "POST":
-        name = request.form["name"]
-        contact_info = request.form["contact_info"]
+        name = request.form.get("name")
+        contact_info = request.form.get("contact_info")
+
+        if not name:  # basic validation
+            return "Name is required", 400
 
         new_customer = Customer(name=name, contact_info=contact_info)
         db.session.add(new_customer)
-        db.session.commit()   # ✅ commit to DB
+        db.session.commit()
 
         return redirect("/customers")
 
     all_customers = Customer.query.all()
     return render_template("customers.html", customers=all_customers)
-
+ 
 
 # Debts
 @app.route("/debts", methods=["GET", "POST"])
