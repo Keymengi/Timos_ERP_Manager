@@ -1,7 +1,4 @@
-from flask import Flask, render_template, request, redirect
-from flask_sqlalchemy import SQLAlchemy
-import os
-
+from flask import Flask, render_template, request, redirect, flash
 from models import db, Customer, Debt, Payment, Product, Sale, SaleItem
 
 app = Flask(__name__)
@@ -32,36 +29,38 @@ def customers():
         name = request.form.get("name")
         contact_info = request.form.get("contact_info")
 
-        if not name:  # basic validation
-            return "Name is required", 400
+        if not name:
+            flash("Name is required!", "error")
+            return redirect("/customers")
 
         new_customer = Customer(name=name, contact_info=contact_info)
         db.session.add(new_customer)
         db.session.commit()
 
+        flash("Customer added successfully!", "success")
         return redirect("/customers")
 
     all_customers = Customer.query.all()
     return render_template("customers.html", customers=all_customers)
- 
+
 
 # Debts
 @app.route("/debts", methods=["GET", "POST"])
 def debts():
     if request.method == "POST":
-        customer_id = request.form["customer_id"]
-        amount = float(request.form["amount"])
-        due_date = request.form["due_date"]
+        customer_id = request.form.get("customer_id")
+        amount = request.form.get("amount")
+        due_date = request.form.get("due_date")
 
         new_debt = Debt(
             customer_id=customer_id,
-            amount=amount,
-            balance=amount,
+            amount=float(amount),
+            balance=float(amount),
             due_date=due_date,
             status="Active"
         )
         db.session.add(new_debt)
-        db.session.commit()   # ✅ commit to DB
+        db.session.commit()
 
         return redirect("/debts")
 
@@ -74,14 +73,13 @@ def debts():
 @app.route("/payments", methods=["GET", "POST"])
 def payments():
     if request.method == "POST":
-        debt_id = request.form["debt_id"]
-        amount = float(request.form["amount"])
-        date = request.form["date"]
+        debt_id = request.form.get("debt_id")
+        amount = float(request.form.get("amount"))
+        date = request.form.get("date")
 
         new_payment = Payment(debt_id=debt_id, amount=amount, date=date)
         db.session.add(new_payment)
 
-        # Update debt balance
         debt = Debt.query.get(debt_id)
         debt.balance -= amount
         if debt.balance <= 0:
@@ -94,14 +92,15 @@ def payments():
     payments = Payment.query.all()
     return render_template("payments.html", debts=debts, payments=payments)
 
+
 # Inventory
 @app.route("/inventory", methods=["GET", "POST"])
 def inventory():
     if request.method == "POST":
-        name = request.form["name"]
-        purchase_price = float(request.form["purchase_price"])
-        selling_price = float(request.form["selling_price"])
-        stock = int(request.form["stock"])
+        name = request.form.get("name")
+        purchase_price = float(request.form.get("purchase_price"))
+        selling_price = float(request.form.get("selling_price"))
+        stock = int(request.form.get("stock"))
 
         new_product = Product(
             name=name,
@@ -117,29 +116,31 @@ def inventory():
     products = Product.query.all()
     return render_template("inventory.html", products=products)
 
+
 # Sales
 @app.route("/sales", methods=["GET", "POST"])
 def sales():
     if request.method == "POST":
-        customer_id = request.form["customer_id"]
-        product_id = request.form["product_id"]
-        quantity = int(request.form["quantity"])
+        customer_id = request.form.get("customer_id")
+        product_id = request.form.get("product_id")
+        quantity = int(request.form.get("quantity"))
 
         product = Product.query.get(product_id)
         total_price = product.selling_price * quantity
 
-        # Create Sale
         new_sale = Sale(customer_id=customer_id, total_amount=total_price)
         db.session.add(new_sale)
         db.session.commit()
 
-        # Create SaleItem
-        sale_item = SaleItem(sale_id=new_sale.id, product_id=product_id, quantity=quantity)
+        sale_item = SaleItem(
+            sale_id=new_sale.id,
+            product_id=product_id,
+            quantity=quantity,
+            price=product.selling_price
+        )
         db.session.add(sale_item)
 
-        # Reduce stock
         product.stock -= quantity
-
         db.session.commit()
         return redirect("/sales")
 
@@ -147,10 +148,11 @@ def sales():
     products = Product.query.all()
     sales = Sale.query.all()
     return render_template("sales.html", customers=customers, products=products, sales=sales)
-# Reports with filters
+
+
+# Reports
 @app.route("/reports", methods=["GET", "POST"])
 def reports():
-    # Default filters
     customer_id = None
     start_date = None
     end_date = None
@@ -160,7 +162,7 @@ def reports():
         start_date = request.form.get("start_date")
         end_date = request.form.get("end_date")
 
-    # Outstanding debts (filtered by customer if chosen)
+    # Outstanding debts
     query_debts = Debt.query.filter(Debt.status == "Active")
     if customer_id:
         query_debts = query_debts.filter(Debt.customer_id == customer_id)
@@ -205,5 +207,5 @@ def reports():
 # -------------------
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()   # ✅ ensures tables exist
+        db.create_all()
     app.run(debug=True)

@@ -49,11 +49,12 @@ class Payment(db.Model):
 # -------------------
 class Product(db.Model):
     __tablename__ = "product"
+
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    purchase_price = db.Column(db.Float, nullable=False)
-    selling_price = db.Column(db.Float, nullable=False)
-    stock_quantity = db.Column(db.Integer, default=0)
+    name = db.Column(db.String(120), nullable=False)
+    purchase_price = db.Column(db.Float, default=0.0)
+    selling_price = db.Column(db.Float, default=0.0)
+    stock = db.Column(db.Integer, default=0)
 
     # Relationships
     sale_items = db.relationship("SaleItem", back_populates="product", lazy=True)
