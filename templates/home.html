@@ -1,6 +1,75 @@
 {% extends "base.html" %}
 
 {% block content %}
-    <h1>Welcome to Timos ERP Manager</h1>
-    <p>This is your starting dashboard. Use the navigation bar to access Customers, Debts, Sales, Inventory, and Reports.</p>
+<!-- Dashboard Hero Banner -->
+<div class="p-5 mb-4 bg-dark text-white rounded-3 shadow">
+    <div class="container-fluid py-2">
+        <h1 class="display-5 fw-bold">Timos ERP Manager</h1>
+        <p class="col-md-8 fs-5 text-light">Welcome back! Select a module below or launch the checkout terminal to start processing transactions.</p>
+        <a href="/sales" class="btn btn-primary btn-lg fw-bold px-4">Open Sales Terminal</a>
+    </div>
+</div>
+
+<!-- Quick Navigation Grid -->
+<div class="row g-4 mb-5">
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
+            <div class="card-body">
+                <h5 class="card-title fw-bold text-primary">Customers</h5>
+                <p class="card-text text-muted small">Manage customer profiles, edit details, and review contact information.</p>
+                <a href="/customers" class="btn btn-outline-primary w-100 fw-bold">View Customers</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
+            <div class="card-body">
+                <h5 class="card-title fw-bold text-danger">Debts</h5>
+                <p class="card-text text-muted small">Monitor active credit balances, issue new debts, and review timelines.</p>
+                <a href="/debts" class="btn btn-outline-danger w-100 fw-bold">Manage Debts</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
+            <div class="card-body">
+                <h5 class="card-title fw-bold text-info">Payments</h5>
+                <p class="card-text text-muted small">Record repayments, reduce customer balances, and review transaction logs.</p>
+                <a href="/payments" class="btn btn-outline-info w-100 fw-bold">Record Payment</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
+            <div class="card-body">
+                <h5 class="card-title fw-bold text-success">Inventory</h5>
+                <p class="card-text text-muted small">Track current stock levels, update purchase prices, and set selling rates.</p>
+                <a href="/inventory" class="btn btn-outline-success w-100 fw-bold">Check Inventory</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
+            <div class="card-body">
+                <h5 class="card-title fw-bold text-secondary">Reports & Returns</h5>
+                <p class="card-text text-muted small">Analyze 7-day revenue, calculate gross profit, and process item returns.</p>
+                <a href="/reports" class="btn btn-outline-secondary w-100 fw-bold">View Reports</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
+            <div class="card-body">
+                <h5 class="card-title fw-bold text-warning">Quotations</h5>
+                <p class="card-text text-muted small">Generate formal price quotes with custom expiration dates for client approval.</p>
+                <a href="/quotations" class="btn btn-outline-warning w-100 fw-bold">Create Quotation</a>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}

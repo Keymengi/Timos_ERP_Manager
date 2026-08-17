@@ -1,72 +1,33 @@
+/* Cleaned up custom styling to work alongside Bootstrap */
 body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-nav {
-    background-color: #333;
-    padding: 10px;
+/* Premium Card Look for Forms */
+.erp-card {
+    background: white;
+    border-radius: 10px;
+    padding: 25px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    margin-bottom: 30px;
+    border: 1px solid #e9ecef;
 }
 
-nav a {
-    color: white;
-    margin-right: 15px;
-    text-decoration: none;
+/* Make tables look seamless */
+.table {
+    background-color: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
 }
 
-nav a:hover {
-    text-decoration: underline;
+.table th {
+    background-color: #343a40 !important;
+    color: white !important;
 }
 
-h1 {
-    color: #007bff;
-}
-form {
-    margin-bottom: 20px;
-}
-
-form input {
-    margin-right: 10px;
-    padding: 5px;
-}
-
-form button {
-    padding: 5px 10px;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    cursor: pointer;
-}
-
-form button:hover {
-    background-color: #0056b3;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-table th {
-    background-color: #f2f2f2;
-}
-form {
-    margin-bottom: 20px;
-}
-
-form input, form select {
-    margin-right: 10px;
-    padding: 5px;
-}
-
-form button {
-    padding: 5px 10px;
-    background-color: #28a745;
-    color: white;
-    border: none;
-    cursor: pointer;
-}
-
-form button:hover {
-    background-color: #1e7e34;
+/* Form inputs spacing */
+.form-label {
+    font-weight: 600;
+    color: #495057;
 }

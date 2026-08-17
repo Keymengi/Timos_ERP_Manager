@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4 fw-bold">Quotations</h2>
+
+<div class="erp-card shadow-sm mb-4 border-warning">
+    <h5 class="mb-3">Generate New Quotation</h5>
+    <form method="POST" action="/quotations" class="row g-3 align-items-end">
+        <div class="col-md-5">
+            <label class="form-label">Customer</label>
+            <select name="customer_id" class="form-select" required>
+                <option value="">-- Select Customer --</option>
+                {% for customer in customers %}
+                <option value="{{ customer.pid }}">{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">Total Amount</label>
+            <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" step="0.01" name="amount" class="form-control" required>
+            </div>
+        </div>
+        <div class="col-md-2">
+            <label class="form-label">Valid For (Days)</label>
+            <input type="number" name="valid_days" class="form-control" value="7" min="1" required>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-warning w-100 fw-bold">Save Quote</button>
+        </div>
+    </form>
+</div>
+
+<div class="erp-card shadow-sm">
+    <table class="table table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>Quote ID</th>
+                <th>Customer</th>
+                <th>Amount</th>
+                <th>Date Generated</th>
+                <th>Valid Until</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for quote in quotations %}
+            <tr>
+                <td>#{{ quote.id }}</td>
+                <td class="fw-bold">{{ quote.customer.name }}</td>
+                <td>${{ quote.total_amount | currency }}</td>
+                <td>{{ quote.date.strftime('%b %d, %Y') }}</td>
+                <td class="text-danger">{{ quote.valid_until.strftime('%b %d, %Y') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,83 +1,139 @@
 {% extends "base.html" %}
+
 {% block content %}
-<div class="container mt-4">
-  <h2 class="mb-4">Reports Dashboard</h2>
+<h2 class="mb-4 fw-bold">Analytics & Reports</h2>
 
-  <!-- Filter form -->
-  <form method="POST" action="/reports" class="card p-3 mb-4 shadow-sm">
-    <div class="row">
-      <div class="col-md-4">
-        <label for="customer_id" class="form-label">Customer</label>
-        <select id="customer_id" name="customer_id" class="form-select">
-          <option value="">All Customers</option>
-          {% for customer in customers %}
-          <option value="{{ customer.id }}">{{ customer.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3">
-        <label for="start_date" class="form-label">Start Date</label>
-        <input type="date" id="start_date" name="start_date" class="form-control">
-      </div>
-      <div class="col-md-3">
-        <label for="end_date" class="form-label">End Date</label>
-        <input type="date" id="end_date" name="end_date" class="form-control">
-      </div>
-      <div class="col-md-2 d-flex align-items-end">
-        <button type="submit" class="btn btn-primary w-100">Filter</button>
-      </div>
-    </div>
-  </form>
+<!-- Filter Form -->
+<div class="erp-card shadow-sm mb-4 bg-light border-0">
+    <form method="POST" action="/reports" class="row g-3 align-items-end">
+        <div class="col-md-3">
+            <label class="form-label">Start Date</label>
+            <!-- Prepopulated with your 7-day default logic -->
+            <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+        </div>
+        <div class="col-md-3">
+            <label class="form-label">End Date</label>
+            <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Filter by Customer (Optional)</label>
+            <select name="customer_id" class="form-select">
+                <option value="">All Customers</option>
+                {% for customer in customers %}
+                <option value="{{ customer.pid }}">{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-dark w-100">Generate</button>
+        </div>
+    </form>
+</div>
 
-  <!-- Summary cards -->
-  <div class="row mb-4">
-    <div class="col-md-4">
-      <div class="card text-center shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">Total Payments</h5>
-          <p class="card-text text-success fw-bold">{{ total_payments }}</p>
+<!-- KPI Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white bg-primary shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="card-title">Total Sales (Period)</h6>
+                <h3 class="fw-bold mb-0">${{ total_sales | currency }}</h3>
+            </div>
         </div>
-      </div>
     </div>
-    <div class="col-md-4">
-      <div class="card text-center shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">Total Sales</h5>
-          <p class="card-text text-primary fw-bold">{{ total_sales }}</p>
+    <div class="col-md-3">
+        <div class="card text-white bg-success shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="card-title">Gross Profit (Period)</h6>
+                <h3 class="fw-bold mb-0">${{ profit | currency }}</h3>
+            </div>
         </div>
-      </div>
     </div>
-    <div class="col-md-4">
-      <div class="card text-center shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title">Profit</h5>
-          <p class="card-text text-warning fw-bold">{{ profit }}</p>
+    <div class="col-md-3">
+        <div class="card text-white bg-info shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="card-title">Payments Received</h6>
+                <h3 class="fw-bold mb-0">${{ total_payments | currency }}</h3>
+            </div>
         </div>
-      </div>
     </div>
-  </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-danger shadow-sm h-100">
+            <div class="card-body">
+                <h6 class="card-title">Active Outstanding Debt</h6>
+                {% set total_debt = outstanding_debts | sum(attribute='balance') %}
+                <h3 class="fw-bold mb-0">${{ total_debt | currency }}</h3>
+            </div>
+        </div>
+    </div>
+</div>
 
-  <!-- Outstanding debts table -->
-  <h3 class="mb-3">Outstanding Debts</h3>
-  <table class="table table-striped table-bordered shadow-sm">
-    <thead class="table-dark">
-      <tr>
-        <th>ID</th>
-        <th>Customer</th>
-        <th>Balance</th>
-        <th>Due Date</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for debt in outstanding_debts %}
-      <tr>
-        <td>{{ debt.id }}</td>
-        <td>{{ debt.customer.name }}</td>
-        <td>{{ debt.balance }}</td>
-        <td>{{ debt.due_date }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- Sales Log & Returns Interface -->
+<div class="erp-card shadow-sm">
+    <h5 class="mb-3">Period Transactions & Returns</h5>
+    <table class="table table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>Sale ID</th>
+                <th>Customer</th>
+                <th>Items</th>
+                <th>Total</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in sales_list %}
+            <tr>
+                <td>#{{ sale.id }}</td>
+                <td class="fw-bold">{{ sale.customer.name if sale.customer else 'Walk-in' }}</td>
+                <td>
+                    <ul class="mb-0 list-unstyled">
+                    {% for item in sale.items %}
+                        <li>{{ item.quantity }}x {{ item.product.name }}</li>
+                    {% endfor %}
+                    </ul>
+                </td>
+                <td class="fw-bold">${{ sale.total_amount | currency }}</td>
+                <td>
+                    <!-- Button to trigger return modal -->
+                    <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#returnModal{{ sale.id }}">
+                        Process Return
+                    </button>
+                </td>
+            </tr>
+
+            <!-- Return Modal for this specific sale -->
+            <div class="modal fade" id="returnModal{{ sale.id }}" tabindex="-1" aria-hidden="true">
+              <div class="modal-dialog">
+                <div class="modal-content">
+                  <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title">Process Return for Sale #{{ sale.id }}</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                  </div>
+                  <div class="modal-body">
+                      <form method="POST" action="/return_item">
+                          <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                          <div class="mb-3">
+                              <label class="form-label">Select Item to Return</label>
+                              <select name="product_id" class="form-select" required>
+                                  {% for item in sale.items %}
+                                  <option value="{{ item.product_id }}">{{ item.product.name }} (Max: {{ item.quantity }})</option>
+                                  {% endfor %}
+                              </select>
+                          </div>
+                          <div class="mb-3">
+                              <label class="form-label">Quantity to Return</label>
+                              <input type="number" name="return_qty" class="form-control" min="1" value="1" required>
+                          </div>
+                          <div class="d-grid">
+                              <button type="submit" class="btn btn-danger">Confirm Return</button>
+                          </div>
+                      </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 {% endblock %}

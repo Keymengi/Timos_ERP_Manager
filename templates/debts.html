@@ -1,46 +1,77 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2>Debts</h2>
+<h2 class="mb-4 fw-bold">Debts</h2>
 
-<form method="POST">
-    <label for="customer_id">Customer:</label>
-    <select name="customer_id" required>
-        {% for customer in customers %}
-        <option value="{{ customer.id }}">{{ customer.name }}</option>
-        {% endfor %}
-    </select>
+<!-- Add Debt Card -->
+<div class="erp-card shadow-sm mb-4">
+    <form method="POST" action="/debts" class="row g-3">
+        <div class="col-md-4">
+            <label class="form-label">Existing Customer</label>
+            <select name="customer_id" class="form-select">
+                <option value="">-- Select Existing --</option>
+                {% for customer in customers %}
+                <option value="{{ customer.pid }}">{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="col-md-1 d-flex align-items-end justify-content-center pb-2">
+            <span class="fw-bold text-muted">OR</span>
+        </div>
 
-    <label for="amount">Amount:</label>
-    <input type="number" step="0.01" name="amount" required>
+        <div class="col-md-4">
+            <label class="form-label">New Customer (Quick Add)</label>
+            <input type="text" name="new_customer_name" class="form-control" placeholder="Type name to auto-create">
+        </div>
 
-    <label for="due_date">Due Date:</label>
-    <input type="text" name="due_date" placeholder="YYYY-MM-DD">
+        <div class="col-md-3">
+            <label class="form-label">Amount</label>
+            <div class="input-group">
+                <span class="input-group-text">$</span>
+                <input type="number" step="0.01" name="amount" class="form-control" required>
+            </div>
+        </div>
 
-    <button type="submit">Add Debt</button>
-</form>
+        <div class="col-12 mt-3">
+            <button type="submit" class="btn btn-danger">Record Debt</button>
+            <small class="text-muted ms-2">If they have an active debt, this will add to their balance automatically.</small>
+        </div>
+    </form>
+</div>
 
-<hr>
-
-<h3>Debt List</h3>
-<table border="1" cellpadding="5">
-    <tr>
-        <th>ID</th>
-        <th>Customer</th>
-        <th>Amount</th>
-        <th>Balance</th>
-        <th>Due Date</th>
-        <th>Status</th>
-    </tr>
-    {% for debt in debts %}
-    <tr>
-        <td>{{ debt.id }}</td>
-        <td>{{ debt.customer.name }}</td>
-        <td>{{ debt.amount }}</td>
-        <td>{{ debt.balance }}</td>
-        <td>{{ debt.due_date }}</td>
-        <td>{{ debt.status }}</td>
-    </tr>
-    {% endfor %}
-</table>
+<!-- Debts Table -->
+<div class="erp-card shadow-sm">
+    <table class="table table-hover align-middle">
+        <thead class="table-dark">
+            <tr>
+                <th>ID</th>
+                <th>Customer</th>
+                <th>Total Taken</th>
+                <th>Current Balance</th>
+                <th>Date Taken</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for debt in debts %}
+            <tr>
+                <td>#{{ debt.id }}</td>
+                <td class="fw-bold">{{ debt.customer.name }}</td>
+                <!-- Applied the currency filter for comma formatting -->
+                <td>${{ debt.amount | currency }}</td>
+                <td class="text-danger fw-bold">${{ debt.balance | currency }}</td>
+                <td>{{ debt.date_taken.strftime('%Y-%m-%d %H:%M') if debt.date_taken else 'N/A' }}</td>
+                <td>
+                    {% if debt.status == 'Active' %}
+                        <span class="badge bg-warning text-dark">Active</span>
+                    {% else %}
+                        <span class="badge bg-success">Cleared</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
 {% endblock %}
