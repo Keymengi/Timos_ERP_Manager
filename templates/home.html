@@ -1,73 +1,69 @@
 {% extends "base.html" %}
-
 {% block content %}
-<!-- Dashboard Hero Banner -->
-<div class="p-5 mb-4 bg-dark text-white rounded-3 shadow">
-    <div class="container-fluid py-2">
-        <h1 class="display-5 fw-bold">Timos ERP Manager</h1>
-        <p class="col-md-8 fs-5 text-light">Welcome back! Select a module below or launch the checkout terminal to start processing transactions.</p>
-        <a href="/sales" class="btn btn-primary btn-lg fw-bold px-4">Open Sales Terminal</a>
-    </div>
-</div>
-
-<!-- Quick Navigation Grid -->
-<div class="row g-4 mb-5">
-    <div class="col-md-4">
-        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
-            <div class="card-body">
-                <h5 class="card-title fw-bold text-primary">Customers</h5>
-                <p class="card-text text-muted small">Manage customer profiles, edit details, and review contact information.</p>
-                <a href="/customers" class="btn btn-outline-primary w-100 fw-bold">View Customers</a>
+<div class="container mt-4">
+    <!-- Hero Welcome Section -->
+    <div class="p-5 mb-4 bg-white rounded-3 shadow-sm border">
+        <div class="container-fluid py-3">
+            <h1 class="display-5 fw-bold text-dark">Timos ERP Manager</h1>
+            <p class="col-md-8 fs-4 text-secondary">Welcome back! Manage your customers, inventory, sales, appointments, and tool rentals all in one seamless dashboard.</p>
+            <div class="mt-4">
+                <a href="/sales" class="btn btn-primary btn-lg shadow-sm">Open Sales Terminal</a>
+                <a href="/bookings" class="btn btn-outline-success btn-lg shadow-sm ms-2">Manage Bookings</a>
             </div>
         </div>
     </div>
 
-    <div class="col-md-4">
-        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
-            <div class="card-body">
-                <h5 class="card-title fw-bold text-danger">Debts</h5>
-                <p class="card-text text-muted small">Monitor active credit balances, issue new debts, and review timelines.</p>
-                <a href="/debts" class="btn btn-outline-danger w-100 fw-bold">Manage Debts</a>
+    <!-- Quick Module Navigation Cards -->
+    <div class="row text-center g-4">
+        <!-- Customers -->
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body d-flex flex-column justify-content-between">
+                    <div>
+                        <h5 class="card-title text-primary fw-bold">Customers</h5>
+                        <p class="card-text text-muted small mt-2">Manage client database, contact records, and profiles.</p>
+                    </div>
+                    <a href="/customers" class="btn btn-outline-primary btn-sm mt-3">View Customers</a>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="col-md-4">
-        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
-            <div class="card-body">
-                <h5 class="card-title fw-bold text-info">Payments</h5>
-                <p class="card-text text-muted small">Record repayments, reduce customer balances, and review transaction logs.</p>
-                <a href="/payments" class="btn btn-outline-info w-100 fw-bold">Record Payment</a>
+        <!-- Inventory -->
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body d-flex flex-column justify-content-between">
+                    <div>
+                        <h5 class="card-title text-success fw-bold">Inventory</h5>
+                        <p class="card-text text-muted small mt-2">Track stock levels, pricing, and available product items.</p>
+                    </div>
+                    <a href="/inventory" class="btn btn-outline-success btn-sm mt-3">View Inventory</a>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="col-md-4">
-        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
-            <div class="card-body">
-                <h5 class="card-title fw-bold text-success">Inventory</h5>
-                <p class="card-text text-muted small">Track current stock levels, update purchase prices, and set selling rates.</p>
-                <a href="/inventory" class="btn btn-outline-success w-100 fw-bold">Check Inventory</a>
+        <!-- Bookings -->
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body d-flex flex-column justify-content-between">
+                    <div>
+                        <h5 class="card-title text-warning text-dark fw-bold">Bookings</h5>
+                        <p class="card-text text-muted small mt-2">Schedule and monitor service appointments and client bookings.</p>
+                    </div>
+                    <a href="/bookings" class="btn btn-outline-dark btn-sm mt-3">View Bookings</a>
+                </div>
             </div>
         </div>
-    </div>
 
-    <div class="col-md-4">
-        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
-            <div class="card-body">
-                <h5 class="card-title fw-bold text-secondary">Reports & Returns</h5>
-                <p class="card-text text-muted small">Analyze 7-day revenue, calculate gross profit, and process item returns.</p>
-                <a href="/reports" class="btn btn-outline-secondary w-100 fw-bold">View Reports</a>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-4">
-        <div class="card h-100 shadow-sm erp-card border-0 text-center py-3">
-            <div class="card-body">
-                <h5 class="card-title fw-bold text-warning">Quotations</h5>
-                <p class="card-text text-muted small">Generate formal price quotes with custom expiration dates for client approval.</p>
-                <a href="/quotations" class="btn btn-outline-warning w-100 fw-bold">Create Quotation</a>
+        <!-- Tool Loans -->
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm border-0">
+                <div class="card-body d-flex flex-column justify-content-between">
+                    <div>
+                        <h5 class="card-title text-danger fw-bold">Tool Loans</h5>
+                        <p class="card-text text-muted small mt-2">Monitor equipment rentals, active loans, and return dates.</p>
+                    </div>
+                    <a href="/loans" class="btn btn-outline-danger btn-sm mt-3">View Loans</a>
+                </div>
             </div>
         </div>
     </div>

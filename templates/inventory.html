@@ -1,73 +1,139 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h2 class="mb-4 fw-bold">Inventory Management</h2>
+<!-- Page Header with Export Button -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">Inventory Management</h2>
+    <a href="/export/inventory" class="btn btn-outline-secondary fw-bold shadow-sm">
+        <i class="fas fa-file-export me-1"></i> Export CSV
+    </a>
+</div>
+
+<!-- Search Bar and Total Valuation Card -->
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8">
+        <form method="GET" action="/inventory" class="d-flex shadow-sm rounded">
+            <!-- Added 'list' attribute and autocomplete="off" -->
+            <input type="text" name="search" list="productSuggestions" class="form-control me-2 border-primary" placeholder="Search products by name..." value="{{ search_query }}" autocomplete="off">
+            
+            <!-- Recommendation Tab (Datalist) -->
+            <datalist id="productSuggestions">
+                {% for p in all_products %}
+                    <option value="{{ p.name }}">
+                {% endfor %}
+            </datalist>
+
+            <button type="submit" class="btn btn-primary px-4 fw-bold">Search</button>
+            {% if search_query %}
+                <a href="/inventory" class="btn btn-outline-secondary ms-2">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+    <div class="col-md-4">
+        <div class="erp-card shadow-sm border-start border-4 border-success h-100">
+            <div class="card-body py-2">
+                <p class="mb-0 text-muted small text-uppercase fw-bold">Total Inventory Value</p>
+                <h4 class="mb-0 fw-bold text-success">{{ total_valuation | currency }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+            <button type="submit" class="btn btn-primary px-4 fw-bold">Search</button>
+            {% if search_query %}
+                <a href="/inventory" class="btn btn-outline-secondary ms-2">Clear</a>
+            {% endif %}
+        </form>
+    </div>
+    <div class="col-md-4">
+        <div class="erp-card shadow-sm border-start border-4 border-success h-100">
+            <div class="card-body py-2">
+                <p class="mb-0 text-muted small text-uppercase fw-bold">Total Inventory Value</p>
+                <h4 class="mb-0 fw-bold text-success">{{ total_valuation | currency }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Add Product Card -->
 <div class="erp-card shadow-sm mb-4 border-success">
-    <h5 class="mb-3">Add New Product</h5>
-    <form method="POST" action="/inventory" class="row g-3 align-items-end">
-        <div class="col-md-3">
-            <label class="form-label">Product Name</label>
-            <input type="text" name="name" class="form-control" placeholder="e.g, Tronic Bulb 9W" required>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Purchase Price</label>
-            <div class="input-group">
-                <span class="input-group-text">$</span>
-                <input type="number" name="purchase_price" class="form-control" required>
+    <div class="card-body">
+        <h5 class="mb-3">Add / Restock Product</h5>
+        <form method="POST" action="/inventory" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Product Name</label>
+                <input type="text" name="name" class="form-control" placeholder="e.g, Tronic Bulb 9W" required>
             </div>
-        </div>
-        <div class="col-md-3">
-            <label class="form-label">Selling Price</label>
-            <div class="input-group">
-                <span class="input-group-text">$</span>
-                <input type="number" step="0.01" name="selling_price" class="form-control" required>
+            <div class="col-md-3">
+                <label class="form-label">Purchase Price</label>
+                <div class="input-group">
+                    <span class="input-group-text">KSh</span>
+                    <input type="number" name="purchase_price" class="form-control" required>
+                </div>
             </div>
-        </div>
-        <div class="col-md-2">
-            <label class="form-label">Initial Stock</label>
-            <input type="number" name="stock" class="form-control" min="0" required>
-        </div>
-        <div class="col-md-1">
-            <button type="submit" class="btn btn-success w-100 fw-bold">+</button>
-        </div>
-    </form>
+            <div class="col-md-3">
+                <label class="form-label">Selling Price</label>
+                <div class="input-group">
+                    <span class="input-group-text">KSh</span>
+                    <input type="number" step="0.01" name="selling_price" class="form-control" required>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Added Stock</label>
+                <input type="number" name="stock" class="form-control" min="0" required>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-success w-100 fw-bold">+</button>
+            </div>
+        </form>
+    </div>
 </div>
 
 <!-- Inventory Table -->
 <div class="erp-card shadow-sm">
-    <table class="table table-hover align-middle">
-        <thead class="table-dark">
-            <tr>
-                <th>ID</th>
-                <th>Product Name</th>
-                <th>Purchase Price</th>
-                <th>Selling Price</th>
-                <th>Profit Margin</th>
-                <th>Current Stock</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for product in products %}
-            <tr>
-                <td>#{{ product.id }}</td>
-                <td class="fw-bold">{{ product.name }}</td>
-                <td>${{ product.purchase_price | currency }}</td>
-                <td>${{ product.selling_price | currency }}</td>
-                <td class="text-success fw-bold">
-                    ${{ (product.selling_price - product.purchase_price) | currency }}
-                </td>
-                <td>
-                    {% if product.stock <= 5 %}
-                        <span class="badge bg-danger fs-6">{{ product.stock }} (Low)</span>
-                    {% else %}
-                        <span class="badge bg-primary fs-6">{{ product.stock }}</span>
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Product Name</th>
+                    <th>Purchase Price</th>
+                    <th>Minimum S.P</th>
+                    <th>Selling Price</th>
+                    <th>Current Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in products %}
+                <tr>
+                    <td>#{{ p.id }}</td>
+                    <td class="fw-bold">{{ p.name }}</td>
+                    <td>{{ p.purchase_price | currency }}</td>
+                    <td class="text-warning fw-bold">{{ p.min_selling_price | currency }}</td>
+                    <td>{{ p.selling_price | currency }}</td>
+                    <td>
+                        <!-- NEW: Low-Stock Alerts Logic -->
+                        {% if p.stock == 0 %}
+                            <span class="badge bg-danger fs-6 px-3">Out of Stock</span>
+                        {% elif p.stock < 10 %}
+                            <span class="badge bg-warning text-dark fs-6 px-3">{{ p.stock }} (Low)</span>
+                        {% else %}
+                            <span class="badge bg-success fs-6 px-3">{{ p.stock }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="6" class="text-center py-4 text-muted">
+                        {% if search_query %}
+                            No products found matching "<strong>{{ search_query }}</strong>".
+                        {% else %}
+                            No products found in inventory.
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 </div>
 {% endblock %}

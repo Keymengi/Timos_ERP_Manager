@@ -24,11 +24,14 @@
             <label class="form-label">New Customer (Quick Add)</label>
             <input type="text" name="new_customer_name" class="form-control" placeholder="Type name to auto-create">
         </div>
-
+        <div class="col-md-4">
+             <label class="form-label">Product/Item (Optional)</label>
+             <input type="text" name="product_name" class="form-control" placeholder="e.g., Screen replacement">
+        </div>
         <div class="col-md-3">
             <label class="form-label">Amount</label>
             <div class="input-group">
-                <span class="input-group-text">$</span>
+                <span class="input-group-text">Ksh</span>
                 <input type="number" step="0.01" name="amount" class="form-control" required>
             </div>
         </div>
@@ -47,6 +50,7 @@
             <tr>
                 <th>ID</th>
                 <th>Customer</th>
+                <th>Item taken</th>
                 <th>Total Taken</th>
                 <th>Current Balance</th>
                 <th>Date Taken</th>
@@ -59,8 +63,9 @@
                 <td>#{{ debt.id }}</td>
                 <td class="fw-bold">{{ debt.customer.name }}</td>
                 <!-- Applied the currency filter for comma formatting -->
-                <td>${{ debt.amount | currency }}</td>
-                <td class="text-danger fw-bold">${{ debt.balance | currency }}</td>
+                <td>{{ debt.product_name or 'N/A' }}</td>
+                <td>Ksh{{ debt.amount | currency }}</td>
+                <td class="text-danger fw-bold">Ksh{{ debt.balance | currency }}</td>
                 <td>{{ debt.date_taken.strftime('%Y-%m-%d %H:%M') if debt.date_taken else 'N/A' }}</td>
                 <td>
                     {% if debt.status == 'Active' %}

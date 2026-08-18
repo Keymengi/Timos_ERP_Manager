@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Tool Loan Tracking</h2>
+    <hr>
+
+    <!-- Form to Issue Tool Loan -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">Issue Tool Loan / Rental</div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Customer</label>
+                        <select name="customer_id" class="form-control" required>
+                            <option value="">Select Customer...</option>
+                            {% for c in customers %}
+                            <option value="{{ c.pid }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Tool Name</label>
+                        <input type="text" name="tool_name" class="form-control" required placeholder="e.g. Heavy Duty Drill">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Expected Return Date</label>
+                        <input type="date" name="return_date" class="form-control" required>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-success">Record Loan</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Loans Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-secondary text-white">Active & Past Loans</div>
+        <div class="card-body">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Customer</th>
+                        <th>Tool Name</th>
+                        <th>Date Borrowed</th>
+                        <th>Return Date</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for l in loans %}
+                    <tr>
+                        <td>{{ l.id }}</td>
+                        <td>{{ l.customer.name }}</td>
+                        <td>{{ l.tool_name }}</td>
+                        <td>{{ l.date_borrowed.strftime('%Y-%m-%d') }}</td>
+                        <td>{{ l.return_date.strftime('%Y-%m-%d') }}</td>
+                        <td>
+                            {% if l.status == 'Active' %}
+                            <span class="badge bg-warning text-dark">Active</span>
+                            {% else %}
+                            <span class="badge bg-success">Returned</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if l.status == 'Active' %}
+                            <form action="{{ url_for('return_tool', loan_id=l.id) }}" method="POST" style="display:inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-primary">Mark Returned</button>
+                            </form>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">No tool loans found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

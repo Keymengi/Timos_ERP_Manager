@@ -61,13 +61,13 @@
                       </div>
                       <div class="modal-body">
                           <div class="mb-3">
-                              <label class="form-label">Name</label>
-                              <input type="text" name="name" class="form-control" value="{{ customer.name }}" required>
+                             <label class="form-label">Customer Name</label>
+                                 <input type="text" name="name" class="form-control" pattern="[A-Za-z\s]+" title="Letters and spaces only" required>
                           </div>
-                          <div class="mb-3">
-                              <label class="form-label">Contact Info</label>
-                              <input type="text" name="contact_info" class="form-control" value="{{ customer.contact_info }}">
-                          </div>
+                            <div class="mb-3">
+                                <label class="form-label">Contact Info</label>
+                                <input type="text" name="contact_info" class="form-control" minlength="10" title="Must be at least 10 characters long" required>
+                            </div>
                       </div>
                       <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>

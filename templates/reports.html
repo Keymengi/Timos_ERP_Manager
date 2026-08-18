@@ -36,7 +36,7 @@
         <div class="card text-white bg-primary shadow-sm h-100">
             <div class="card-body">
                 <h6 class="card-title">Total Sales (Period)</h6>
-                <h3 class="fw-bold mb-0">${{ total_sales | currency }}</h3>
+                <h3 class="fw-bold mb-0">{{ total_sales | currency }}</h3>
             </div>
         </div>
     </div>
@@ -44,7 +44,7 @@
         <div class="card text-white bg-success shadow-sm h-100">
             <div class="card-body">
                 <h6 class="card-title">Gross Profit (Period)</h6>
-                <h3 class="fw-bold mb-0">${{ profit | currency }}</h3>
+                <h3 class="fw-bold mb-0">{{ profit | currency }}</h3>
             </div>
         </div>
     </div>
@@ -52,7 +52,7 @@
         <div class="card text-white bg-info shadow-sm h-100">
             <div class="card-body">
                 <h6 class="card-title">Payments Received</h6>
-                <h3 class="fw-bold mb-0">${{ total_payments | currency }}</h3>
+                <h3 class="fw-bold mb-0">{{ total_payments | currency }}</h3>
             </div>
         </div>
     </div>
@@ -61,7 +61,7 @@
             <div class="card-body">
                 <h6 class="card-title">Active Outstanding Debt</h6>
                 {% set total_debt = outstanding_debts | sum(attribute='balance') %}
-                <h3 class="fw-bold mb-0">${{ total_debt | currency }}</h3>
+                <h3 class="fw-bold mb-0">{{ total_debt | currency }}</h3>
             </div>
         </div>
     </div>
@@ -92,7 +92,7 @@
                     {% endfor %}
                     </ul>
                 </td>
-                <td class="fw-bold">${{ sale.total_amount | currency }}</td>
+                <td class="fw-bold">{{ sale.total_amount | currency }}</td>
                 <td>
                     <!-- Button to trigger return modal -->
                     <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#returnModal{{ sale.id }}">

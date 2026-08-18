@@ -58,6 +58,8 @@
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Type</th>
+                <th>Status</th>
+                <th>Actions</th>
                 <th>Total</th>
             </tr>
         </thead>
@@ -75,7 +77,22 @@
                         <span class="badge bg-danger">Debt</span>
                     {% endif %}
                 </td>
-                <td class="fw-bold">${{ sale.total_amount | currency }}</td>
+                <td>
+    {% if sale.status == 'Completed' %}
+        <span class="badge bg-success">Completed</span>
+    {% else %}
+        <span class="badge bg-danger">Cancelled</span>
+    {% endif %}
+    </td>
+    <td>
+    {% if sale.status == 'Completed' %}
+    <form action="/sales/cancel/{{ sale.id }}" method="POST" onsubmit="return confirm('Are you sure you want to return these items and cancel the sale?');">
+        <button type="submit" class="btn btn-sm btn-outline-danger fw-bold">Return Items</button>
+    </form>
+    {% endif %}
+    </td>
+            <td class="fw-bold">Ksh{{ sale.total_amount | currency }}</td>
+
             </tr>
             {% endfor %}
         </tbody>

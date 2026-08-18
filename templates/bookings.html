@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Service Bookings & Appointments</h2>
+    <hr>
+
+    <!-- Form to Schedule Booking -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-primary text-white">Schedule New Appointment</div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Customer</label>
+                        <select name="customer_id" class="form-control" required>
+                            <option value="">Select Customer...</option>
+                            {% for c in customers %}
+                            <option value="{{ c.pid }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Service Name</label>
+                        <input type="text" name="service_name" class="form-control" required placeholder="e.g. Diagnostic & Repair">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Booking Date & Time</label>
+                        <input type="datetime-local" name="booking_date" class="form-control" required>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Description / Notes</label>
+                    <textarea name="description" class="form-control" rows="2" placeholder="Optional details..."></textarea>
+                </div>
+                <button type="submit" class="btn btn-success">Schedule Booking</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Bookings Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-secondary text-white">All Bookings</div>
+        <div class="card-body">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Customer</th>
+                        <th>Service</th>
+                        <th>Date & Time</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in bookings %}
+                    <tr>
+                        <td>{{ b.id }}</td>
+                        <td>{{ b.customer.name }}</td>
+                        <td>{{ b.service_name }}</td>
+                        <td>{{ b.booking_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td><span class="badge bg-info">{{ b.status }}</span></td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">No bookings recorded yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
