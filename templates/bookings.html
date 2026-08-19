@@ -8,7 +8,7 @@
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">Schedule New Appointment</div>
         <div class="card-body">
-            <form method="POST">
+            <form method="POST" action="/bookings">
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label class="form-label">Customer</label>
@@ -24,13 +24,17 @@
                         <input type="text" name="service_name" class="form-control" required placeholder="e.g. Diagnostic & Repair">
                     </div>
                     <div class="col-md-4">
+                      <label class="form-label">Charge (KSh)</label>
+                      <input type="number" step="0.01" name="charge" class="form-control" min="0" required> 
+                     </div>
+                    <div class="col-md-4 mt-3">
                         <label class="form-label">Booking Date & Time</label>
                         <input type="datetime-local" name="booking_date" class="form-control" required>
                     </div>
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">Description / Notes</label>
-                    <textarea name="description" class="form-control" rows="2" placeholder="Optional details..."></textarea>
+                    <div class="col-md-8 mt-3">
+                        <label class="form-label">Description / Notes</label>
+                        <input type="text" name="description" class="form-control" placeholder="Optional details...">
+                    </div>
                 </div>
                 <button type="submit" class="btn btn-success">Schedule Booking</button>
             </form>
@@ -41,14 +45,17 @@
     <div class="card shadow-sm">
         <div class="card-header bg-secondary text-white">All Bookings</div>
         <div class="card-body">
-            <table class="table table-striped">
+            <table class="table table-striped align-middle">
                 <thead>
                     <tr>
                         <th>ID</th>
                         <th>Customer</th>
                         <th>Service</th>
+                        <th>Charge</th>
                         <th>Date & Time</th>
+                        <th>Notes</th>
                         <th>Status</th>
+                        <th class="text-center">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -57,12 +64,94 @@
                         <td>{{ b.id }}</td>
                         <td>{{ b.customer.name }}</td>
                         <td>{{ b.service_name }}</td>
+                        <td>{{ b.charge | currency }}</td>
                         <td>{{ b.booking_date.strftime('%Y-%m-%d %H:%M') }}</td>
-                        <td><span class="badge bg-info">{{ b.status }}</span></td>
+                        
+                        <!-- Description trigger -->
+                        <td>
+                            {% if b.description %}
+                            <button class="btn btn-sm btn-info text-white" data-bs-toggle="modal" data-bs-target="#descModal{{ b.id }}">View</button>
+                            {% else %}
+                            <span class="text-muted">N/A</span>
+                            {% endif %}
+                        </td>
+
+                        <td>
+                            {% if b.status == 'Confirmed' or b.status == 'Pending' %}
+                                <span class="badge bg-warning text-dark">{{ b.status }}</span>
+                            {% elif b.status == 'Done' %}
+                                <span class="badge bg-success">Done</span>
+                            {% else %}
+                                <span class="badge bg-danger">{{ b.status }}</span>
+                            {% endif %}
+                        </td>
+                        
+                        <td class="text-center">
+                            {% if b.status != 'Done' and b.status != 'Cancelled' %}
+                            <form action="/bookings/done/{{ b.id }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-success">Mark Done</button>
+                            </form>
+                            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editBookingModal{{ b.id }}">Edit</button>
+                            <form action="/bookings/cancel/{{ b.id }}" method="POST" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
+
+                    <!-- Desc Modal -->
+                    <div class="modal fade" id="descModal{{ b.id }}" tabindex="-1">
+                      <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content">
+                          <div class="modal-header bg-info text-white">
+                            <h5 class="modal-title">Booking Notes</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                          </div>
+                          <div class="modal-body">
+                            <p class="mb-0">{{ b.description }}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Edit Booking Modal -->
+                    <div class="modal fade" id="editBookingModal{{ b.id }}" tabindex="-1">
+                      <div class="modal-dialog">
+                        <div class="modal-content">
+                          <form method="POST" action="/bookings/edit/{{ b.id }}">
+                              <div class="modal-header bg-light">
+                                <h5 class="modal-title">Edit Booking</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                              </div>
+                              <div class="modal-body">
+                                  <div class="mb-3">
+                                     <label class="form-label">Service Name</label>
+                                     <input type="text" name="service_name" class="form-control" value="{{ b.service_name }}" required>
+                                  </div>
+                                  <div class="mb-3">
+                                     <label class="form-label">Charge</label>
+                                     <input type="number" step="0.01" name="charge" class="form-control" value="{{ b.charge }}">
+                                  </div>
+                                  <div class="mb-3">
+                                     <label class="form-label">Booking Date & Time</label>
+                                     <!-- The value must be formatted to yyyy-MM-ddThh:mm -->
+                                     <input type="datetime-local" name="booking_date" class="form-control" value="{{ b.booking_date.strftime('%Y-%m-%dT%H:%M') }}">
+                                  </div>
+                                  <div class="mb-3">
+                                     <label class="form-label">Description / Notes</label>
+                                     <textarea name="description" class="form-control" rows="2">{{ b.description }}</textarea>
+                                  </div>
+                              </div>
+                              <div class="modal-footer">
+                                <button type="submit" class="btn btn-success">Save Changes</button>
+                              </div>
+                          </form>
+                        </div>
+                      </div>
+                    </div>
                     {% else %}
                     <tr>
-                        <td colspan="5" class="text-center text-muted">No bookings recorded yet.</td>
+                        <td colspan="8" class="text-center text-muted">No bookings recorded yet.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

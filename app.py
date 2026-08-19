@@ -1,9 +1,12 @@
 import re
 import csv
+import os
+from functools import wraps
 from flask import Response
 from flask import Flask, render_template, request, redirect, flash, url_for
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from models import db, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, Quotation, ServiceBooking, ToolLoan
 
@@ -19,7 +22,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db.init_app(app)
 
 # -------------------
-# Flask-Login Setup
+# Flask-Login & RBAC Setup
 # -------------------
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -29,6 +32,15 @@ login_manager.login_message_category = 'danger'
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if current_user.role != 'Admin':
+            flash("Access Denied: You need Admin privileges to view this page.", "danger")
+            return redirect(url_for('home'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # --- Currency Filter ---
 @app.template_filter('currency')
@@ -73,11 +85,12 @@ def logout():
 @app.route("/")
 @login_required
 def home():
-    return render_template("home.html")
+    return render_template("home.html") 
 
-# 1. CUSTOMERS
+# 1. CUSTOMERS (Admin Only)
 @app.route("/customers", methods=["GET", "POST"])
 @login_required
+@admin_required
 def customers():
     if request.method == "POST":
         name = request.form.get("name", "").strip()
@@ -102,11 +115,18 @@ def customers():
             
         return redirect("/customers")
 
-    all_customers = Customer.query.all()
-    return render_template("customers.html", customers=all_customers)
+    search_query = request.args.get("search", "").strip()
+    if search_query:
+        sq_no_space = search_query.replace(" ", "")
+        all_customers = Customer.query.filter(func.replace(Customer.name, ' ', '').ilike(f"%{sq_no_space}%")).all()
+    else:
+        all_customers = Customer.query.all()
+        
+    return render_template("customers.html", customers=all_customers, search_query=search_query)
 
 @app.route("/customers/edit/<int:pid>", methods=["POST"])
 @login_required
+@admin_required
 def edit_customer(pid):
     customer = Customer.query.get_or_404(pid)
     name = request.form.get("name", "").strip()
@@ -114,10 +134,6 @@ def edit_customer(pid):
 
     if not re.match(r"^[A-Za-z\s]+$", name):
         flash("Error: Customer name must contain only letters and spaces.", "danger")
-        return redirect("/customers")
-        
-    if len(contact_info) < 10:
-        flash("Error: Contact info must be at least 10 characters/numbers long.", "danger")
         return redirect("/customers")
 
     customer.name = name
@@ -132,45 +148,108 @@ def edit_customer(pid):
         
     return redirect("/customers")
 
-# 2. DEBTS
+# 2. DEBTS (Staff + Admin)
 @app.route("/debts", methods=["GET", "POST"])
 @login_required
 def debts():
     if request.method == "POST":
         customer_id = request.form.get("customer_id")
-        customer_name = request.form.get("customer_name").strip()
-        product_name = request.form.get("product_name", "").strip() 
-        amount = float(request.form.get("amount"))
+        new_customer_name = request.form.get("new_customer_name", "").strip()
+        
+        try:
+            amount = float(request.form.get("amount", 0))
+        except ValueError:
+            amount = 0
 
-        new_debt = Debt(
-            customer_id=customer_id, 
-            customer_name=customer_name, 
-            product_name=product_name, 
-            amount=amount, 
-            balance=amount,
-            date=datetime.utcnow()
-        )
-        db.session.add(new_debt)
+        if amount <= 0:
+            flash("Error: Debt amount must be greater than zero.", "danger")
+            return redirect("/debts")
+
+        if new_customer_name:
+            cust = Customer.query.filter_by(name=new_customer_name).first()
+            if not cust:
+                cust = Customer(name=new_customer_name, contact_info="N/A")
+                db.session.add(cust)
+                db.session.flush()
+            customer_id = cust.pid
+            
+        if not customer_id:
+            flash("Error: Please select an existing customer or enter a new customer name.", "danger")
+            return redirect("/debts")
+
+        customer_obj = Customer.query.get(customer_id)
+        
+        active_debt = Debt.query.filter_by(customer_id=customer_id, status="Active").first()
+        if active_debt:
+            active_debt.amount += amount
+            active_debt.balance += amount
+            flash(f"Debt appended! Added KSh {amount} to {customer_obj.name}'s active debt.", "success")
+        else:
+            new_debt = Debt(
+                customer_id=customer_id, 
+                customer_name=customer_obj.name, 
+                amount=amount, 
+                balance=amount,
+                date_taken=datetime.now()
+            )
+            db.session.add(new_debt)
+            flash("New debt recorded successfully!", "success")
+            
         db.session.commit()
-        flash("Debt recorded successfully!", "success")
         return redirect("/debts")
     
-    all_debts = Debt.query.order_by(Debt.date.desc()).all()
+    all_debts = Debt.query.order_by(Debt.date_taken.desc()).all()
     customers = Customer.query.all()
     return render_template("debts.html", debts=all_debts, customers=customers)
 
-# 3. PAYMENTS
+@app.route("/debts/edit/<int:id>", methods=["POST"])
+@login_required
+def edit_debt(id):
+    debt = Debt.query.get_or_404(id)
+    try:
+        new_balance = float(request.form.get("balance", debt.balance))
+    except ValueError:
+        new_balance = debt.balance
+
+    if new_balance < 0:
+        flash("Balance cannot be negative.", "danger")
+        return redirect("/debts")
+    
+    debt.balance = new_balance
+    if debt.balance <= 0:
+        debt.status = "Cleared"
+    else:
+        debt.status = "Active"
+        
+    db.session.commit()
+    flash("Debt balance updated successfully.", "success")
+    return redirect("/debts")
+
+# 3. PAYMENTS (Staff + Admin)
 @app.route("/payments", methods=["GET", "POST"])
 @login_required
 def payments():
     if request.method == "POST":
         debt_id = request.form.get("debt_id")
-        amount = float(request.form.get("amount"))
+        
+        try:
+            amount = float(request.form.get("amount", 0))
+        except ValueError:
+            amount = 0
+
+        debt = Debt.query.get(debt_id)
+        
+        if amount <= 0:
+            flash("Error: Payment amount must be greater than zero.", "danger")
+            return redirect("/payments")
+            
+        if amount > debt.balance:
+            flash(f"Error: Payment cannot exceed outstanding balance.", "danger")
+            return redirect("/payments")
 
         new_payment = Payment(debt_id=debt_id, amount=amount, date=datetime.now())
         db.session.add(new_payment)
 
-        debt = Debt.query.get(debt_id)
         debt.balance -= amount
         if debt.balance <= 0:
             debt.status = "Cleared"
@@ -183,15 +262,20 @@ def payments():
     payments = Payment.query.order_by(Payment.date.desc()).all()
     return render_template("payments.html", debts=debts, payments=payments)
 
-# 4. INVENTORY
+# 4. INVENTORY & RETURNS (Admin Only)
 @app.route("/inventory", methods=["GET", "POST"])
 @login_required
+@admin_required
 def inventory():
     if request.method == "POST":
         raw_name = request.form.get("name", "").strip()
         purchase_price = int(request.form.get("purchase_price"))
         selling_price = float(request.form.get("selling_price"))
         added_stock = int(request.form.get("stock"))
+
+        if added_stock <= 0:
+            flash("Error: Restock quantity must be greater than zero.", "danger")
+            return redirect("/inventory")
 
         min_sp = purchase_price + purchase_price * 0.5
 
@@ -229,52 +313,111 @@ def inventory():
         return redirect("/inventory")
 
     search_query = request.args.get("search", "").strip()
-    all_products = Product.query.all()
+    max_stock = request.args.get("max_stock", "")
+    
+    query = Product.query
     
     if search_query:
-        products = Product.query.filter(Product.name.ilike(f"%{search_query}%")).all()
-    else:
-        products = all_products
+        sq_no_space = search_query.replace(" ", "")
+        query = query.filter(func.replace(Product.name, ' ', '').ilike(f"%{sq_no_space}%"))
+        
+    if max_stock.isdigit():
+        query = query.filter(Product.stock <= int(max_stock))
 
+    products = query.all()
+    all_products = Product.query.all()
     total_valuation = sum(p.purchase_price * p.stock for p in all_products)
 
-    return render_template("inventory.html", products=products, all_products=all_products, search_query=search_query, total_valuation=total_valuation)
+    return render_template("inventory.html", products=products, all_products=all_products, search_query=search_query, max_stock=max_stock, total_valuation=total_valuation)
+
+@app.route("/inventory/edit/<int:id>", methods=["POST"])
+@login_required
+@admin_required
+def edit_inventory(id):
+    product = Product.query.get_or_404(id)
+    product.name = request.form.get("name", product.name).strip().title()
+    product.purchase_price = float(request.form.get("purchase_price", product.purchase_price))
+    product.selling_price = float(request.form.get("selling_price", product.selling_price))
+    product.stock = int(request.form.get("stock", product.stock))
+    
+    product.min_selling_price = product.purchase_price + (product.purchase_price * 0.5)
+    
+    try:
+        db.session.commit()
+        flash("Product updated securely.", "success")
+    except IntegrityError:
+        db.session.rollback()
+        flash("Update failed. Ensure product name is unique.", "danger")
+    return redirect("/inventory")
+
+@app.route("/inventory/delete/<int:id>", methods=["POST"])
+@login_required
+@admin_required
+def delete_inventory(id):
+    product = Product.query.get_or_404(id)
+    try:
+        db.session.delete(product)
+        db.session.commit()
+        flash("Product deleted securely.", "success")
+    except IntegrityError:
+        db.session.rollback()
+        flash("Cannot delete product because it exists in past transaction logs. Consider editing stock to 0 instead.", "danger")
+    return redirect("/inventory")
+
 
 @app.route("/return_item", methods=["POST"])
 @login_required
+@admin_required
 def return_item():
     sale_id = request.form.get("sale_id")
     product_id = request.form.get("product_id")
-    return_qty = int(request.form.get("return_qty"))
+    
+    try:
+        return_qty = int(request.form.get("return_qty", 0))
+    except ValueError:
+        return_qty = 0
+
+    if return_qty <= 0:
+        flash("Error: Return quantity must be greater than zero.", "danger")
+        return redirect(request.referrer or "/reports")
 
     sale_item = SaleItem.query.filter_by(sale_id=sale_id, product_id=product_id).first()
     
-    if sale_item and return_qty <= sale_item.quantity:
-        ret = ReturnItem(sale_id=sale_id, product_id=product_id, quantity=return_qty, date_returned=datetime.now())
-        db.session.add(ret)
+    if not sale_item:
+        flash("Error: Item not found in this transaction.", "danger")
+        return redirect(request.referrer or "/reports")
 
-        product = Product.query.get(product_id)
-        product.stock += return_qty
+    returned_already = db.session.query(func.sum(ReturnItem.quantity)).filter_by(sale_id=sale_id, product_id=product_id).scalar() or 0
+    available_to_return = sale_item.quantity - returned_already
 
-        refund_amount = return_qty * sale_item.price
-        sale = Sale.query.get(sale_id)
-        sale.total_amount -= refund_amount
-
-        if sale.sale_type == "Debt" and sale.customer_id:
-            active_debt = Debt.query.filter_by(customer_id=sale.customer_id, status="Active").first()
-            if active_debt:
-                active_debt.balance -= refund_amount
-                if active_debt.balance <= 0:
-                    active_debt.status = "Cleared"
-
-        db.session.commit()
-        flash(f"Successfully returned {return_qty}x {product.name}. Stock and balances updated.", "success")
-    else:
-        flash("Error processing return. Invalid quantity.", "danger")
+    if return_qty > available_to_return:
+        flash(f"Error: Cannot return {return_qty} units. Only {available_to_return} unreturned units remain.", "danger")
+        return redirect(request.referrer or "/reports")
         
-    return redirect("/reports")
+    ret = ReturnItem(sale_id=sale_id, product_id=product_id, quantity=return_qty, date_returned=datetime.now())
+    db.session.add(ret)
 
-# 5. SALES
+    product = Product.query.get(product_id)
+    product.stock += return_qty
+
+    refund_amount = return_qty * sale_item.price
+    sale = Sale.query.get(sale_id)
+    sale.total_amount -= refund_amount
+
+    if sale.sale_type == "Debt" and sale.customer_id:
+        active_debt = Debt.query.filter_by(customer_id=sale.customer_id, status="Active").first()
+        if active_debt:
+            active_debt.amount -= refund_amount
+            active_debt.balance -= refund_amount
+            if active_debt.balance <= 0:
+                active_debt.balance = 0
+                active_debt.status = "Cancelled"
+
+    db.session.commit()
+    flash(f"Successfully returned {return_qty}x {product.name}.", "success")
+    return redirect(request.referrer or "/reports")
+
+# 5. SALES (Staff + Admin)
 @app.route("/sales", methods=["GET", "POST"])
 @login_required
 def sales():
@@ -282,8 +425,16 @@ def sales():
         customer_id = request.form.get("customer_id")
         new_customer_name = request.form.get("new_customer_name")
         product_id = request.form.get("product_id")
-        quantity = int(request.form.get("quantity"))
         sale_type = request.form.get("sale_type")
+        
+        try:
+            quantity = int(request.form.get("quantity", 0))
+        except ValueError:
+            quantity = 0
+
+        if quantity <= 0:
+            flash("Error: Sale quantity must be greater than zero.", "danger")
+            return redirect("/sales")
 
         product = Product.query.get(product_id)
         
@@ -328,10 +479,9 @@ def sales():
                 new_debt = Debt(
                     customer_id=customer_id, 
                     customer_name=cust_name,
-                    product_name=product.name,
                     amount=total_price, 
                     balance=total_price, 
-                    date=datetime.utcnow()
+                    date_taken=datetime.now()
                 )
                 db.session.add(new_debt)
 
@@ -340,19 +490,49 @@ def sales():
         return redirect("/sales")
 
     customers = Customer.query.all()
-    products = Product.query.all()
-    sales = Sale.query.order_by(Sale.date.desc()).all()
-    return render_template("sales.html", customers=customers, products=products, sales=sales)
+    products = Product.query.filter(Product.stock > 0).all()
+    sales = Sale.query.order_by(Sale.date.desc()).limit(50).all()
+    
+    return render_template("sales.html", customers=customers, products=products, sales=sales, ReturnItem=ReturnItem, func=func, db=db)
 
-# 6. QUOTATIONS
+@app.route("/sales/cancel/<int:sale_id>", methods=["POST"])
+@login_required
+def cancel_sale(sale_id):
+    sale = Sale.query.get_or_404(sale_id)
+    
+    if sale.status == "Cancelled":
+        flash("This sale has already been cancelled.", "warning")
+        return redirect(request.referrer or "/sales")
+
+    sale.status = "Cancelled"
+    
+    for item in sale.items:
+        returned_qty = db.session.query(func.sum(ReturnItem.quantity)).filter_by(sale_id=sale.id, product_id=item.product_id).scalar() or 0
+        unreturned_qty = item.quantity - returned_qty
+        
+        if unreturned_qty > 0:
+            product = Product.query.get(item.product_id)
+            if product:
+                product.stock += unreturned_qty
+            
+    db.session.commit()
+    flash(f"Sale #{sale.id} fully cancelled.", "success")
+    return redirect(request.referrer or "/sales")
+
+# 6. QUOTATIONS (Admin Only)
 @app.route("/quotations", methods=["GET", "POST"])
 @login_required
+@admin_required
 def quotations():
     if request.method == "POST":
         customer_id = request.form.get("customer_id")
-        amount = float(request.form.get("amount"))
+        amount = float(request.form.get("amount", 0))
         valid_days = int(request.form.get("valid_days", 7))
         
+        if amount <= 0:
+            flash("Error: Amount must be greater than zero.", "danger")
+            return redirect("/quotations")
+            
         valid_until = datetime.now() + timedelta(days=valid_days)
         new_quote = Quotation(customer_id=customer_id, total_amount=amount, date=datetime.now(), valid_until=valid_until)
         db.session.add(new_quote)
@@ -364,9 +544,10 @@ def quotations():
     quotations = Quotation.query.all()
     return render_template("quotations.html", customers=customers, quotations=quotations)
 
-# 7. REPORTS
+# 7. REPORTS (Admin Only)
 @app.route("/reports", methods=["GET", "POST"])
 @login_required
+@admin_required
 def reports():
     end_date_dt = datetime.now()
     start_date_dt = end_date_dt - timedelta(days=7)
@@ -404,7 +585,11 @@ def reports():
         if sale.status != "Cancelled":
             total_sales += sale.total_amount
             for item in sale.items:
-                profit += (item.price - item.product.purchase_price) * item.quantity
+                returned_qty = db.session.query(func.sum(ReturnItem.quantity)).filter_by(sale_id=sale.id, product_id=item.product_id).scalar() or 0
+                effective_qty = item.quantity - returned_qty
+                
+                if effective_qty > 0:
+                    profit += (item.price - item.product.purchase_price) * effective_qty
 
     customers = Customer.query.all()
 
@@ -417,31 +602,15 @@ def reports():
         customers=customers,
         start_date=start_date_dt.strftime("%Y-%m-%d"),
         end_date=end_date_dt.strftime("%Y-%m-%d"),
-        sales_list=query_sales.all()
+        sales_list=query_sales.all(),
+        ReturnItem=ReturnItem, 
+        func=func, 
+        db=db
     )
-
-@app.route("/sales/cancel/<int:sale_id>", methods=["POST"])
-@login_required
-def cancel_sale(sale_id):
-    sale = Sale.query.get_or_404(sale_id)
-    
-    if sale.status == "Cancelled":
-        flash("This sale has already been cancelled.", "warning")
-        return redirect("/sales")
-
-    sale.status = "Cancelled"
-    
-    for item in sale.items:
-        product = Product.query.get(item.product_id)
-        if product:
-            product.stock += item.quantity
-            
-    db.session.commit()
-    flash(f"Sale #{sale.id} cancelled. Stock restored and profit recalculated.", "success")
-    return redirect("/sales")
 
 @app.route("/export/inventory")
 @login_required
+@admin_required
 def export_inventory():
     products = Product.query.all()
     
@@ -452,23 +621,38 @@ def export_inventory():
             
     return Response(generate(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=inventory_report.csv'})
 
-# 8. SERVICE BOOKINGS
+# 8. SERVICE BOOKINGS (Admin Only)
 @app.route("/bookings", methods=["GET", "POST"])
 @login_required
+@admin_required
 def bookings():
     if request.method == "POST":
         customer_id = request.form.get("customer_id")
         service_name = request.form.get("service_name").strip()
         description = request.form.get("description", "").strip()
         booking_date_str = request.form.get("booking_date")
+        
+        try:
+            charge = float(request.form.get("charge", 0))
+        except ValueError:
+            charge = 0
+
+        if charge < 0:
+            flash("Error: Charge cannot be negative.", "danger")
+            return redirect("/bookings")
 
         booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M")
+
+        if booking_date.date() < datetime.today().date():
+            flash("Error: Service booking date cannot be in the past.", "danger")
+            return redirect("/bookings")
 
         new_booking = ServiceBooking(
             customer_id=customer_id,
             service_name=service_name,
             description=description,
-            booking_date=booking_date
+            booking_date=booking_date,
+            charge=charge
         )
         db.session.add(new_booking)
         db.session.commit()
@@ -479,7 +663,49 @@ def bookings():
     all_bookings = ServiceBooking.query.order_by(ServiceBooking.booking_date.desc()).all()
     return render_template("bookings.html", customers=customers, bookings=all_bookings)
 
-# 9. TOOL LOANS
+@app.route("/bookings/edit/<int:id>", methods=["POST"])
+@login_required
+@admin_required
+def edit_booking(id):
+    booking = ServiceBooking.query.get_or_404(id)
+    booking.service_name = request.form.get("service_name", booking.service_name)
+    booking.description = request.form.get("description", booking.description)
+    try:
+        booking.charge = float(request.form.get("charge", booking.charge))
+    except ValueError:
+        pass
+        
+    date_str = request.form.get("booking_date")
+    if date_str:
+        booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
+        
+    db.session.commit()
+    flash("Booking details updated successfully.", "success")
+    return redirect("/bookings")
+
+@app.route("/bookings/done/<int:id>", methods=["POST"])
+@login_required
+@admin_required
+def done_booking(id):
+    booking = ServiceBooking.query.get_or_404(id)
+    booking.status = "Done"
+    db.session.commit()
+    flash("Service booking marked as Done.", "success")
+    return redirect("/bookings")
+
+@app.route("/bookings/cancel/<int:booking_id>", methods=["POST"])
+@login_required
+@admin_required
+def cancel_booking(booking_id):
+    booking = ServiceBooking.query.get_or_404(booking_id)
+    if booking.status != "Cancelled":
+        booking.status = "Cancelled"
+        db.session.commit()
+        flash(f"Service booking for '{booking.customer.name}' cancelled successfully.", "success")
+    return redirect("/bookings")
+
+
+# 9. TOOL LOANS (Staff + Admin)
 @app.route("/loans", methods=["GET", "POST"])
 @login_required
 def loans():
@@ -514,17 +740,27 @@ def return_tool(loan_id):
     return redirect("/loans")
 
 # -------------------
-# Run App & Seed Admin User
+# Run App & Seed Users
 # -------------------
 if __name__ == "__main__":
     with app.app_context():
         db.create_all()
         
-        if not User.query.first():
-            admin_user = User(username="admin", role="Admin")
-            admin_user.set_password("admin123")
-            db.session.add(admin_user)
-            db.session.commit()
-            print("Default admin created (username: admin, password: admin123)")
+        admin_user = User.query.filter_by(username="admin").first()
+        if not admin_user:
+            admin_password = os.environ.get("ADMIN_PASSWORD", "pass364")
+            new_admin = User(username="admin", role="Admin")
+            new_admin.set_password(admin_password)
+            db.session.add(new_admin)
+            print(f"Default admin created (username: admin, password: {admin_password})")
 
+        staff_user = User.query.filter_by(username="staff").first()
+        if not staff_user:
+            staff_password = os.environ.get("STAFF_PASSWORD", "staff123")
+            new_staff = User(username="staff", role="Staff")
+            new_staff.set_password(staff_password)
+            db.session.add(new_staff)
+            print(f"Default staff created (username: staff, password: {staff_password})")
+            
+        db.session.commit()
     app.run(debug=True)

@@ -8,7 +8,6 @@
     <form method="POST" action="/reports" class="row g-3 align-items-end">
         <div class="col-md-3">
             <label class="form-label">Start Date</label>
-            <!-- Prepopulated with your 7-day default logic -->
             <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
         </div>
         <div class="col-md-3">
@@ -75,7 +74,7 @@
             <tr>
                 <th>Sale ID</th>
                 <th>Customer</th>
-                <th>Items</th>
+                <th>Items (Excluding Returns)</th>
                 <th>Total</th>
                 <th>Action</th>
             </tr>
@@ -88,20 +87,26 @@
                 <td>
                     <ul class="mb-0 list-unstyled">
                     {% for item in sale.items %}
-                        <li>{{ item.quantity }}x {{ item.product.name }}</li>
+                        <!-- Evaluate Returned Subtractions Logically -->
+                        {% set returned_qty = db.session.query(func.sum(ReturnItem.quantity)).filter_by(sale_id=sale.id, product_id=item.product_id).scalar() or 0 %}
+                        {% set effective_qty = item.quantity - returned_qty %}
+                        
+                        <!-- Omit if completely returned -->
+                        {% if effective_qty > 0 %}
+                            <li>{{ effective_qty }}x {{ item.product.name }}</li>
+                        {% endif %}
                     {% endfor %}
                     </ul>
                 </td>
                 <td class="fw-bold">{{ sale.total_amount | currency }}</td>
                 <td>
-                    <!-- Button to trigger return modal -->
                     <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#returnModal{{ sale.id }}">
                         Process Return
                     </button>
                 </td>
             </tr>
 
-            <!-- Return Modal for this specific sale -->
+            <!-- Return Modal -->
             <div class="modal fade" id="returnModal{{ sale.id }}" tabindex="-1" aria-hidden="true">
               <div class="modal-dialog">
                 <div class="modal-content">
@@ -116,7 +121,12 @@
                               <label class="form-label">Select Item to Return</label>
                               <select name="product_id" class="form-select" required>
                                   {% for item in sale.items %}
-                                  <option value="{{ item.product_id }}">{{ item.product.name }} (Max: {{ item.quantity }})</option>
+                                  {% set r_qty = db.session.query(func.sum(ReturnItem.quantity)).filter_by(sale_id=sale.id, product_id=item.product_id).scalar() or 0 %}
+                                  {% set available_to_return = item.quantity - r_qty %}
+                                  
+                                  {% if available_to_return > 0 %}
+                                  <option value="{{ item.product_id }}">{{ item.product.name }} (Max: {{ available_to_return }})</option>
+                                  {% endif %}
                                   {% endfor %}
                               </select>
                           </div>

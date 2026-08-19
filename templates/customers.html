@@ -24,7 +24,17 @@
         </div>
     </form>
 </div>
-
+<div class="mb-4">
+    <form method="GET" action="/customers" class="d-flex shadow-sm rounded">
+        <input type="text" name="search" list="customerSuggestions" class="form-control me-2" placeholder="Search existing customers by name or phone..." value="{{ search_query }}" autocomplete="off">
+        <datalist id="customerSuggestions">
+            {% for customer in customers %}
+                <option value="{{ customer.name }}">
+            {% endfor %}
+        </datalist>
+        <button type="submit" class="btn btn-dark px-4">Search</button>
+    </form>
+</div>
 <!-- Customers Table -->
 <div class="erp-card shadow-sm">
     <table class="table table-hover align-middle">
@@ -43,7 +53,6 @@
                 <td class="fw-bold">{{ customer.name }}</td>
                 <td>{{ customer.contact_info or 'N/A' }}</td>
                 <td class="text-center">
-                    <!-- Button trigger modal for Editing -->
                     <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ customer.pid }}">
                         Edit
                     </button>
@@ -62,11 +71,11 @@
                       <div class="modal-body">
                           <div class="mb-3">
                              <label class="form-label">Customer Name</label>
-                                 <input type="text" name="name" class="form-control" pattern="[A-Za-z\s]+" title="Letters and spaces only" required>
+                                 <input type="text" name="name" class="form-control" value="{{ customer.name }}" pattern="[A-Za-z\s]+" title="Letters and spaces only" required>
                           </div>
                             <div class="mb-3">
                                 <label class="form-label">Contact Info</label>
-                                <input type="text" name="contact_info" class="form-control" minlength="10" title="Must be at least 10 characters long" required>
+                                <input type="text" name="contact_info" class="form-control" value="{{ customer.contact_info }}" minlength="10" title="Must be at least 10 characters long" required>
                             </div>
                       </div>
                       <div class="modal-footer">

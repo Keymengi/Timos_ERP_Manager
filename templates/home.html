@@ -1,69 +1,126 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="container mt-4">
-    <!-- Hero Welcome Section -->
-    <div class="p-5 mb-4 bg-white rounded-3 shadow-sm border">
-        <div class="container-fluid py-3">
-            <h1 class="display-5 fw-bold text-dark">Timos ERP Manager</h1>
-            <p class="col-md-8 fs-4 text-secondary">Welcome back! Manage your customers, inventory, sales, appointments, and tool rentals all in one seamless dashboard.</p>
-            <div class="mt-4">
-                <a href="/sales" class="btn btn-primary btn-lg shadow-sm">Open Sales Terminal</a>
-                <a href="/bookings" class="btn btn-outline-success btn-lg shadow-sm ms-2">Manage Bookings</a>
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="fw-bold">Dashboard Overview</h1>
+        <p class="text-muted">Welcome back, {{ current_user.username }}. Select a module below to get started.</p>
+    </div>
+</div>
+
+<div class="row g-4 pb-5">
+    <!-- Customers -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Customers</h5>
+                    <p class="card-text text-muted small">Manage customer profiles, contact info, and transaction histories.</p>
+                </div>
+                <a href="/customers" class="btn btn-outline-primary mt-3 w-100">Manage Customers</a>
             </div>
         </div>
     </div>
 
-    <!-- Quick Module Navigation Cards -->
-    <div class="row text-center g-4">
-        <!-- Customers -->
-        <div class="col-md-3">
-            <div class="card h-100 shadow-sm border-0">
-                <div class="card-body d-flex flex-column justify-content-between">
-                    <div>
-                        <h5 class="card-title text-primary fw-bold">Customers</h5>
-                        <p class="card-text text-muted small mt-2">Manage client database, contact records, and profiles.</p>
-                    </div>
-                    <a href="/customers" class="btn btn-outline-primary btn-sm mt-3">View Customers</a>
+    <!-- Sales Terminal -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Sales Terminal</h5>
+                    <p class="card-text text-muted small">Process new sales transactions and view receipt logs.</p>
                 </div>
+                <a href="/sales" class="btn btn-primary mt-3 w-100">Open Sales</a>
             </div>
         </div>
+    </div>
 
-        <!-- Inventory -->
-        <div class="col-md-3">
-            <div class="card h-100 shadow-sm border-0">
-                <div class="card-body d-flex flex-column justify-content-between">
-                    <div>
-                        <h5 class="card-title text-success fw-bold">Inventory</h5>
-                        <p class="card-text text-muted small mt-2">Track stock levels, pricing, and available product items.</p>
-                    </div>
-                    <a href="/inventory" class="btn btn-outline-success btn-sm mt-3">View Inventory</a>
+    <!-- Debts & Credit -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Debts & Credit</h5>
+                    <p class="card-text text-muted small">Track outstanding customer balances and credit terms.</p>
                 </div>
+                <a href="/debts" class="btn btn-danger mt-3 w-100">View Debts</a>
             </div>
         </div>
+    </div>
 
-        <!-- Bookings -->
-        <div class="col-md-3">
-            <div class="card h-100 shadow-sm border-0">
-                <div class="card-body d-flex flex-column justify-content-between">
-                    <div>
-                        <h5 class="card-title text-warning text-dark fw-bold">Bookings</h5>
-                        <p class="card-text text-muted small mt-2">Schedule and monitor service appointments and client bookings.</p>
-                    </div>
-                    <a href="/bookings" class="btn btn-outline-dark btn-sm mt-3">View Bookings</a>
+    <!-- Payments -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Payments</h5>
+                    <p class="card-text text-muted small">Log incoming payments and clear account balances.</p>
                 </div>
+                <a href="/payments" class="btn btn-info text-white mt-3 w-100">Log Payments</a>
             </div>
         </div>
+    </div>
 
-        <!-- Tool Loans -->
-        <div class="col-md-3">
-            <div class="card h-100 shadow-sm border-0">
-                <div class="card-body d-flex flex-column justify-content-between">
-                    <div>
-                        <h5 class="card-title text-danger fw-bold">Tool Loans</h5>
-                        <p class="card-text text-muted small mt-2">Monitor equipment rentals, active loans, and return dates.</p>
-                    </div>
-                    <a href="/loans" class="btn btn-outline-danger btn-sm mt-3">View Loans</a>
+    <!-- Inventory -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Inventory</h5>
+                    <p class="card-text text-muted small">Monitor stock levels, pricing, and product availability.</p>
                 </div>
+                <a href="/inventory" class="btn btn-success mt-3 w-100">Manage Inventory</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quotations -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Quotations</h5>
+                    <p class="card-text text-muted small">Generate and track professional price quotes for clients.</p>
+                </div>
+                <a href="/quotations" class="btn btn-secondary mt-3 w-100">View Quotations</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bookings -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Bookings</h5>
+                    <p class="card-text text-muted small">Schedule and manage customer bookings or reservations.</p>
+                </div>
+                <a href="/bookings" class="btn btn-warning text-dark mt-3 w-100">Manage Bookings</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool Loans -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Tool Loans</h5>
+                    <p class="card-text text-muted small">Track equipment borrowings, returns, and due dates.</p>
+                </div>
+                <a href="/loans" class="btn btn-dark mt-3 w-100">Manage Loans</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">Reports</h5>
+                    <p class="card-text text-muted small">Analyze business performance metrics, sales, and analytics.</p>
+                </div>
+                <a href="/reports" class="btn btn-outline-dark mt-3 w-100">View Reports</a>
             </div>
         </div>
     </div>

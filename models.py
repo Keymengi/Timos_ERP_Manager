@@ -42,11 +42,11 @@ class Debt(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customer.pid'), nullable=False)
     customer_name = db.Column(db.String(120), nullable=False)
-    product_name = db.Column(db.String(120), nullable=True) 
-    amount = db.Column(db.Float, nullable=False)
+    product_name = db.Column(db.String(255), nullable=True) # Expanded length to hold multiple items
+    amount = db.Column(db.Float, nullable=False) # Represents "Total Taken"
     balance = db.Column(db.Float, nullable=False, default=0.0)
     status = db.Column(db.String(20), default="Active")
-    date = db.Column(db.DateTime, default=datetime.utcnow)
+    date_taken = db.Column(db.DateTime, default=datetime.now) # Fixed to match UI N/A issue
     
     customer = db.relationship("Customer", back_populates="debts")
     payments = db.relationship("Payment", back_populates="debt", lazy=True)
@@ -56,7 +56,7 @@ class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     debt_id = db.Column(db.Integer, db.ForeignKey("debt.id"), nullable=False)
     amount = db.Column(db.Float, nullable=False)
-    date = db.Column(db.DateTime, default=datetime.utcnow)
+    date = db.Column(db.DateTime, default=datetime.now)
 
     debt = db.relationship("Debt", back_populates="payments")
 
@@ -82,7 +82,7 @@ class Sale(db.Model):
     __tablename__ = "sale"
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.pid"), nullable=True)
-    date = db.Column(db.DateTime, default=datetime.utcnow)
+    date = db.Column(db.DateTime, default=datetime.now)
     total_amount = db.Column(db.Float, nullable=False)
     sale_type = db.Column(db.String(20), default="Normal") 
     status = db.Column(db.String(20), default="Completed")
@@ -111,7 +111,7 @@ class ReturnItem(db.Model):
     sale_id = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    date_returned = db.Column(db.DateTime, default=datetime.utcnow)
+    date_returned = db.Column(db.DateTime, default=datetime.now)
 
     sale = db.relationship("Sale", back_populates="returns")
     product = db.relationship("Product")
@@ -123,7 +123,7 @@ class Quotation(db.Model):
     __tablename__ = "quotation"
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.pid"), nullable=True)
-    date = db.Column(db.DateTime, default=datetime.utcnow)
+    date = db.Column(db.DateTime, default=datetime.now)
     valid_until = db.Column(db.DateTime)
     total_amount = db.Column(db.Float, default=0.0)
 
@@ -139,6 +139,7 @@ class ServiceBooking(db.Model):
     service_name = db.Column(db.String(120), nullable=False)
     description = db.Column(db.Text, nullable=True)
     booking_date = db.Column(db.DateTime, nullable=False)
+    charge = db.Column(db.Float, default=0.0) # Feature addition: Added Charge column
     status = db.Column(db.String(20), default="Pending")
 
     customer = db.relationship("Customer", backref="service_bookings", lazy=True)
@@ -151,7 +152,7 @@ class ToolLoan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey("customer.pid"), nullable=False)
     tool_name = db.Column(db.String(120), nullable=False)
-    date_borrowed = db.Column(db.DateTime, default=datetime.utcnow)
+    date_borrowed = db.Column(db.DateTime, default=datetime.now)
     return_date = db.Column(db.DateTime, nullable=False)
     status = db.Column(db.String(20), default="Active")
 
