@@ -738,29 +738,30 @@ def return_tool(loan_id):
     db.session.commit()
     flash(f"Tool '{loan.tool_name}' marked as returned.", "success")
     return redirect("/loans")
+# -------------------
+# Database Setup & Seeding (Runs for Gunicorn & Local)
+# -------------------
+with app.app_context():
+    db.create_all()
+    
+    # Ensure Admin exists and password stays updated
+    admin_user = User.query.filter_by(username="admin").first()
+    if not admin_user:
+        admin_user = User(username="admin", role="Admin")
+        db.session.add(admin_user)
+    admin_user.set_password(os.environ.get("ADMIN_PASSWORD", "pass364"))
+
+    # Ensure Staff exists and password stays updated
+    staff_user = User.query.filter_by(username="staff").first()
+    if not staff_user:
+        staff_user = User(username="staff", role="Staff")
+        db.session.add(staff_user)
+    staff_user.set_password(os.environ.get("STAFF_PASSWORD", "staff123"))
+        
+    db.session.commit()
 
 # -------------------
-# Run App & Seed Users
+# Run App (Local only)
 # -------------------
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-        
-        admin_user = User.query.filter_by(username="admin").first()
-        if not admin_user:
-            admin_password = os.environ.get("ADMIN_PASSWORD", "pass364")
-            new_admin = User(username="admin", role="Admin")
-            new_admin.set_password(admin_password)
-            db.session.add(new_admin)
-            print(f"Default admin created (username: admin, password: {admin_password})")
-
-        staff_user = User.query.filter_by(username="staff").first()
-        if not staff_user:
-            staff_password = os.environ.get("STAFF_PASSWORD", "staff123")
-            new_staff = User(username="staff", role="Staff")
-            new_staff.set_password(staff_password)
-            db.session.add(new_staff)
-            print(f"Default staff created (username: staff, password: {staff_password})")
-            
-        db.session.commit()
     app.run(debug=True)
