@@ -1,17 +1,23 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- Page Header with Export Button -->
+<!-- Page Header with Import and Export Buttons -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="fw-bold mb-0">Inventory Management</h2>
-    <a href="/export/inventory" class="btn btn-outline-secondary fw-bold shadow-sm">
-        <i class="fas fa-file-export me-1"></i> Export CSV
-    </a>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#importModal">
+            <i class="fas fa-file-import me-1"></i> Import Access DB
+        </button>
+        <a href="/export/inventory" class="btn btn-outline-secondary fw-bold shadow-sm">
+            <i class="fas fa-file-export me-1"></i> Export CSV
+        </a>
+    </div>
 </div>
 
 <!-- Search Bar and Total Valuation Card -->
 <div class="row mb-4 align-items-center">
     <div class="col-md-8">
+        <!-- GET Search Form: Omitted data-offline="true" -->
         <form method="GET" action="/inventory" class="d-flex shadow-sm rounded gap-2">
             <input type="text" name="search" list="productSuggestions" class="form-control border-primary" placeholder="Search products by name..." value="{{ search_query }}" autocomplete="off">
             <input type="number" name="max_stock" class="form-control" style="max-width: 150px;" placeholder="Max Stock Lvl" value="{{ max_stock }}">
@@ -42,7 +48,8 @@
 <div class="erp-card shadow-sm mb-4 border-success">
     <div class="card-body">
         <h5 class="mb-3">Add / Restock Product</h5>
-        <form method="POST" action="/inventory" class="row g-3 align-items-end">
+        <!-- ADDED data-offline="true" -->
+        <form method="POST" action="/inventory" class="row g-3 align-items-end" data-offline="true">
             <div class="col-md-3">
                 <label class="form-label">Product Name</label>
                 <input type="text" name="name" list="existingProducts" class="form-control" placeholder="e.g, Tronic Bulb 9W" autocomplete="off" required>
@@ -111,7 +118,8 @@
                     </td>
                     <td class="text-center">
                         <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}">Edit</button>
-                        <form action="/inventory/delete/{{ p.id }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to completely delete this product record?');">
+                        <!-- ADDED data-offline="true" -->
+                        <form action="/inventory/delete/{{ p.id }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to completely delete this product record?');" data-offline="true">
                             <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> Delete</button>
                         </form>
                     </td>
@@ -121,7 +129,8 @@
                 <div class="modal fade" id="editModal{{ p.id }}" tabindex="-1" aria-hidden="true">
                   <div class="modal-dialog">
                     <div class="modal-content">
-                      <form method="POST" action="/inventory/edit/{{ p.id }}">
+                      <!-- ADDED data-offline="true" -->
+                      <form method="POST" action="/inventory/edit/{{ p.id }}" data-offline="true">
                           <div class="modal-header bg-light">
                             <h5 class="modal-title">Edit Product: {{ p.name }}</h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -163,5 +172,33 @@
             </tbody>
         </table>
     </div>
+</div>
+
+<!-- Import MS Access Modal -->
+<div class="modal fade" id="importModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <!-- File Upload Form: Omitted data-offline="true" -->
+      <form method="POST" action="/inventory/import" enctype="multipart/form-data">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title"><i class="fas fa-file-import me-2"></i>Import Inventory Data</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+              <div class="mb-3">
+                 <label class="form-label fw-bold">Select Inventory CSV File (.csv)</label>
+                 <input type="file" name="file" class="form-control" accept=".csv" required>
+                 <div class="form-text mt-2">
+                     Supports structured `.csv` files.
+                 </div>
+              </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary fw-bold">Upload & Sync</button>
+          </div>
+      </form>
+    </div>
+  </div>
 </div>
 {% endblock %}

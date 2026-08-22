@@ -8,7 +8,7 @@
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">Issue Tool Loan / Rental</div>
         <div class="card-body">
-            <form method="POST">
+            <form method="POST" data-offline="true">
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label class="form-label">Customer</label>
@@ -66,7 +66,7 @@
                         </td>
                         <td>
                             {% if l.status == 'Active' %}
-                            <form action="{{ url_for('return_tool', loan_id=l.id) }}" method="POST" style="display:inline;">
+                            <form action="{{ url_for('return_tool', loan_id=l.id) }}" method="POST" style="display:inline;" data-offline="true">
                                 <button type="submit" class="btn btn-sm btn-outline-primary">Mark Returned</button>
                             </form>
                             {% else %}

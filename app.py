@@ -1,9 +1,10 @@
 import re
 import csv
 import os
+import io
 from functools import wraps
 from flask import Response
-from flask import Flask, render_template, request, redirect, flash, url_for
+from flask import Flask, render_template, request, redirect, flash, url_for, jsonify
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
@@ -16,7 +17,16 @@ app = Flask(__name__)
 # Configuration
 # -------------------
 app.config['SECRET_KEY'] = 'timos_secret_key_change_in_production'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///timos_erp_v2.db' 
+
+# Dynamic Database URI: Uses Render's PostgreSQL if available, otherwise falls back to local SQLite
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+else:
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///timos_erp_v2.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
@@ -93,14 +103,20 @@ def home():
 @admin_required
 def customers():
     if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        contact_info = request.form.get("contact_info", "").strip()
+        data = request.get_json() if request.is_json else request.form
+        
+        name = data.get("name", "").strip()
+        contact_info = data.get("contact_info", "").strip()
 
         if not re.match(r"^[A-Za-z\s]+$", name):
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "error", "message": "Customer name must contain only letters and spaces."}), 400
             flash("Error: Customer name must contain only letters and spaces.", "danger")
             return redirect("/customers")
             
         if len(contact_info) < 10:
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "error", "message": "Contact info must be at least 10 characters/numbers long."}), 400
             flash("Error: Contact info must be at least 10 characters/numbers long.", "danger")
             return redirect("/customers")
 
@@ -108,9 +124,15 @@ def customers():
             new_customer = Customer(name=name, contact_info=contact_info)
             db.session.add(new_customer)
             db.session.commit()
+            
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "success", "message": "Customer added successfully!"}), 200
+                
             flash("Customer added successfully!", "success")
         except IntegrityError:
             db.session.rollback()
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "error", "message": f"Customer name '{name}' already exists!"}), 400
             flash(f"Error: Customer name '{name}' already exists!", "danger")
             
         return redirect("/customers")
@@ -129,10 +151,14 @@ def customers():
 @admin_required
 def edit_customer(pid):
     customer = Customer.query.get_or_404(pid)
-    name = request.form.get("name", "").strip()
-    contact_info = request.form.get("contact_info", "").strip()
+    data = request.get_json() if request.is_json else request.form
+    
+    name = data.get("name", "").strip()
+    contact_info = data.get("contact_info", "").strip()
 
     if not re.match(r"^[A-Za-z\s]+$", name):
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": "Customer name must contain only letters and spaces."}), 400
         flash("Error: Customer name must contain only letters and spaces.", "danger")
         return redirect("/customers")
 
@@ -141,9 +167,13 @@ def edit_customer(pid):
     
     try:
         db.session.commit()
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "success", "message": "Customer updated successfully!"}), 200
         flash("Customer updated successfully!", "success")
     except IntegrityError:
         db.session.rollback()
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": "That name is already taken."}), 400
         flash("Error: That name is already taken by another customer.", "danger")
         
     return redirect("/customers")
@@ -268,18 +298,30 @@ def payments():
 @admin_required
 def inventory():
     if request.method == "POST":
-        raw_name = request.form.get("name", "").strip()
-        purchase_price = int(request.form.get("purchase_price"))
-        selling_price = float(request.form.get("selling_price"))
-        added_stock = int(request.form.get("stock"))
+        data = request.get_json() if request.is_json else request.form
+        
+        raw_name = data.get("name", "").strip()
+        try:
+            purchase_price = int(data.get("purchase_price", 0))
+            selling_price = float(data.get("selling_price", 0))
+            added_stock = int(data.get("stock", 0))
+        except ValueError:
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "error", "message": "Invalid numeric input"}), 400
+            flash("Error: Invalid numeric input.", "danger")
+            return redirect("/inventory")
 
         if added_stock <= 0:
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "error", "message": "Restock quantity must be greater than zero."}), 400
             flash("Error: Restock quantity must be greater than zero.", "danger")
             return redirect("/inventory")
 
         min_sp = purchase_price + purchase_price * 0.5
 
         if selling_price < min_sp:
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "error", "message": f"Selling price cannot be less than Minimum S.P ({min_sp})"}), 400
             flash(f"Error: Selling price cannot be less than Minimum S.P (KSh {min_sp:,.2f}).", "danger")
             return redirect("/inventory")
 
@@ -292,6 +334,8 @@ def inventory():
             existing_product.min_selling_price = min_sp
             
             db.session.commit()
+            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                return jsonify({"status": "success", "message": "Stock added successfully!"}), 200
             flash(f"Restocked! Added {added_stock} units to '{existing_product.name}'.", "success")
         else:
             formatted_name = raw_name.title()
@@ -305,9 +349,13 @@ def inventory():
                 )
                 db.session.add(new_product)
                 db.session.commit()
+                if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                    return jsonify({"status": "success", "message": "Product added successfully!"}), 200
                 flash(f"New product '{formatted_name}' added to inventory!", "success")
             except IntegrityError:
                 db.session.rollback()
+                if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+                    return jsonify({"status": "error", "message": "Product creation conflict."}), 400
                 flash("Error: Product creation conflict.", "danger")
 
         return redirect("/inventory")
@@ -335,18 +383,27 @@ def inventory():
 @admin_required
 def edit_inventory(id):
     product = Product.query.get_or_404(id)
-    product.name = request.form.get("name", product.name).strip().title()
-    product.purchase_price = float(request.form.get("purchase_price", product.purchase_price))
-    product.selling_price = float(request.form.get("selling_price", product.selling_price))
-    product.stock = int(request.form.get("stock", product.stock))
+    data = request.get_json() if request.is_json else request.form
     
+    product.name = data.get("name", product.name).strip().title()
+    try:
+        product.purchase_price = float(data.get("purchase_price", product.purchase_price))
+        product.selling_price = float(data.get("selling_price", product.selling_price))
+        product.stock = int(data.get("stock", product.stock))
+    except ValueError:
+        pass
+        
     product.min_selling_price = product.purchase_price + (product.purchase_price * 0.5)
     
     try:
         db.session.commit()
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "success", "message": "Product updated securely."}), 200
         flash("Product updated securely.", "success")
     except IntegrityError:
         db.session.rollback()
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": "Ensure product name is unique."}), 400
         flash("Update failed. Ensure product name is unique.", "danger")
     return redirect("/inventory")
 
@@ -358,32 +415,111 @@ def delete_inventory(id):
     try:
         db.session.delete(product)
         db.session.commit()
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "success", "message": "Product deleted."}), 200
         flash("Product deleted securely.", "success")
     except IntegrityError:
         db.session.rollback()
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": "Cannot delete product linked to past logs."}), 400
         flash("Cannot delete product because it exists in past transaction logs. Consider editing stock to 0 instead.", "danger")
     return redirect("/inventory")
 
+@app.route("/inventory/import", methods=["POST"])
+@login_required
+@admin_required
+def import_inventory():
+    if 'file' not in request.files:
+        flash("No file part in the request.", "danger")
+        return redirect("/inventory")
+        
+    file = request.files['file']
+    
+    if file.filename == '':
+        flash("No file selected.", "danger")
+        return redirect("/inventory")
+
+    if file and file.filename.endswith('.csv'):
+        try:
+            # Read the CSV file directly from memory
+            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
+            csv_input = csv.DictReader(stream)
+            
+            imported_count = 0
+            updated_count = 0
+            
+            for row in csv_input:
+                # Extract fields based on your expected CSV headers
+                name = row.get('Product Name', '').strip().title()
+                
+                try:
+                    purchase_price = float(row.get('Purchase Price', 0))
+                    selling_price = float(row.get('Selling Price', 0))
+                    stock = int(row.get('Stock', 0))
+                except ValueError:
+                    continue # Skip rows with invalid numbers
+                
+                if not name:
+                    continue
+                    
+                min_sp = purchase_price + (purchase_price * 0.5)
+
+                # Check if product already exists to avoid duplicates
+                existing_product = Product.query.filter(Product.name.ilike(name)).first()
+                
+                if existing_product:
+                    existing_product.stock += stock
+                    existing_product.purchase_price = purchase_price
+                    existing_product.selling_price = selling_price
+                    existing_product.min_selling_price = min_sp
+                    updated_count += 1
+                else:
+                    new_product = Product(
+                        name=name,
+                        purchase_price=purchase_price,
+                        min_selling_price=min_sp,
+                        selling_price=selling_price,
+                        stock=stock
+                    )
+                    db.session.add(new_product)
+                    imported_count += 1
+            
+            db.session.commit()
+            flash(f"Import successful! Added {imported_count} new products and updated {updated_count} existing products.", "success")
+            
+        except Exception as e:
+            db.session.rollback()
+            flash(f"Error processing the CSV file: {str(e)}", "danger")
+    else:
+        flash("Unsupported file type. Please upload a .csv file.", "danger")
+
+    return redirect("/inventory")
 
 @app.route("/return_item", methods=["POST"])
 @login_required
 @admin_required
 def return_item():
-    sale_id = request.form.get("sale_id")
-    product_id = request.form.get("product_id")
+    data = request.get_json() if request.is_json else request.form
+    
+    sale_id = data.get("sale_id")
+    product_id = data.get("product_id")
     
     try:
-        return_qty = int(request.form.get("return_qty", 0))
+        return_qty = int(data.get("return_qty", 0))
     except ValueError:
         return_qty = 0
 
     if return_qty <= 0:
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": "Return quantity must be greater than zero."}), 400
         flash("Error: Return quantity must be greater than zero.", "danger")
         return redirect(request.referrer or "/reports")
 
     sale_item = SaleItem.query.filter_by(sale_id=sale_id, product_id=product_id).first()
     
     if not sale_item:
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": "Item not found in this transaction."}), 400
         flash("Error: Item not found in this transaction.", "danger")
         return redirect(request.referrer or "/reports")
 
@@ -391,6 +527,8 @@ def return_item():
     available_to_return = sale_item.quantity - returned_already
 
     if return_qty > available_to_return:
+        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+            return jsonify({"status": "error", "message": f"Cannot return {return_qty} units. Only {available_to_return} left."}), 400
         flash(f"Error: Cannot return {return_qty} units. Only {available_to_return} unreturned units remain.", "danger")
         return redirect(request.referrer or "/reports")
         
@@ -414,6 +552,10 @@ def return_item():
                 active_debt.status = "Cancelled"
 
     db.session.commit()
+    
+    if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
+        return jsonify({"status": "success", "message": "Return processed successfully!"}), 200
+        
     flash(f"Successfully returned {return_qty}x {product.name}.", "success")
     return redirect(request.referrer or "/reports")
 
@@ -730,6 +872,15 @@ def loans():
     all_loans = ToolLoan.query.order_by(ToolLoan.date_borrowed.desc()).all()
     return render_template("loans.html", customers=customers, loans=all_loans)
 
+from flask import send_from_directory
+
+@app.route('/sw.js')
+def sw():
+    # This serves sw.js from the static folder, but makes the browser think it's at the root (/)
+    response = send_from_directory('static', 'sw.js')
+    response.headers['Cache-Control'] = 'no-cache'
+    return response
+
 @app.route("/loans/return/<int:loan_id>", methods=["POST"])
 @login_required
 def return_tool(loan_id):
@@ -738,6 +889,7 @@ def return_tool(loan_id):
     db.session.commit()
     flash(f"Tool '{loan.tool_name}' marked as returned.", "success")
     return redirect("/loans")
+
 # -------------------
 # Database Setup & Seeding (Runs for Gunicorn & Local)
 # -------------------

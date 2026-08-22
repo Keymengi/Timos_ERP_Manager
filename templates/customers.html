@@ -10,7 +10,7 @@
 <!-- Add Customer Card -->
 <div class="erp-card shadow-sm mb-4">
     <h5 class="mb-3">Add New Customer</h5>
-    <form method="POST" action="/customers" class="row g-3 align-items-end">
+    <form method="POST" action="/customers" class="row g-3 align-items-end" data-offline="true">
         <div class="col-md-5">
             <label for="name" class="form-label">Name <span class="text-danger">*</span></label>
             <input type="text" name="name" class="form-control" placeholder="John Doe" required>
@@ -63,7 +63,7 @@
             <div class="modal fade" id="editModal{{ customer.pid }}" tabindex="-1" aria-hidden="true">
               <div class="modal-dialog">
                 <div class="modal-content">
-                  <form method="POST" action="/customers/edit/{{ customer.pid }}">
+                  <form method="POST" action="/customers/edit/{{ customer.pid }}" data-offline="true">
                       <div class="modal-header bg-light">
                         <h5 class="modal-title">Edit Customer: {{ customer.name }}</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

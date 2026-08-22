@@ -7,6 +7,7 @@
     <!-- Local Bootstrap CSS -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
 </head>
 <body class="bg-light">
     <!-- Premium Navigation Bar (Using navbar-expand-xl to prevent link wrapping overflow) -->
@@ -54,7 +55,26 @@
         {% block content %}{% endblock %}
     </div>
 
-<!-- Bootstrap JS -->
-<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    <!-- Bootstrap JS -->
+    <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+    
+    <!-- Offline Sync JS -->
+    <script src="{{ url_for('static', filename='js/offline-sync.js') }}"></script>
+
+    <!-- Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                // Registering from the root route we created in app.py
+                navigator.serviceWorker.register('/sw.js')
+                    .then(registration => {
+                        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                    })
+                    .catch(err => {
+                        console.log('ServiceWorker registration failed: ', err);
+                    });
+            });
+        }
+    </script>
 </body>
 </html>

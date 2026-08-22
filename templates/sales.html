@@ -5,7 +5,7 @@
 
 <!-- Sale Form Card -->
 <div class="erp-card shadow-sm mb-4 border-primary">
-    <form method="POST" action="/sales" class="row g-3">
+    <form method="POST" action="/sales" class="row g-3" data-offline="true">
         
         <!-- Customer Selection Area -->
         <div class="col-md-4">
@@ -96,7 +96,7 @@
                 </td>
                 <td>
                     {% if sale.status == 'Completed' %}
-                    <form action="/sales/cancel/{{ sale.id }}" method="POST" onsubmit="return confirm('Are you sure you want to return these items and cancel the sale?');">
+                    <form action="/sales/cancel/{{ sale.id }}" method="POST" onsubmit="return confirm('Are you sure you want to return these items and cancel the sale?');" data-offline="true">
                         <button type="submit" class="btn btn-sm btn-outline-danger fw-bold">Return Items</button>
                     </form>
                     {% endif %}

@@ -8,7 +8,7 @@
     <div class="card shadow-sm mb-4">
         <div class="card-header bg-primary text-white">Schedule New Appointment</div>
         <div class="card-body">
-            <form method="POST" action="/bookings">
+            <form method="POST" action="/bookings" data-offline="true">
                 <div class="row mb-3">
                     <div class="col-md-4">
                         <label class="form-label">Customer</label>
@@ -88,11 +88,11 @@
                         
                         <td class="text-center">
                             {% if b.status != 'Done' and b.status != 'Cancelled' %}
-                            <form action="/bookings/done/{{ b.id }}" method="POST" class="d-inline">
+                            <form action="/bookings/done/{{ b.id }}" method="POST" class="d-inline" data-offline="true">
                                 <button type="submit" class="btn btn-sm btn-success">Mark Done</button>
                             </form>
                             <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editBookingModal{{ b.id }}">Edit</button>
-                            <form action="/bookings/cancel/{{ b.id }}" method="POST" class="d-inline">
+                            <form action="/bookings/cancel/{{ b.id }}" method="POST" class="d-inline" data-offline="true">
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Cancel</button>
                             </form>
                             {% endif %}
@@ -118,7 +118,7 @@
                     <div class="modal fade" id="editBookingModal{{ b.id }}" tabindex="-1">
                       <div class="modal-dialog">
                         <div class="modal-content">
-                          <form method="POST" action="/bookings/edit/{{ b.id }}">
+                          <form method="POST" action="/bookings/edit/{{ b.id }}" data-offline="true">
                               <div class="modal-header bg-light">
                                 <h5 class="modal-title">Edit Booking</h5>
                                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
