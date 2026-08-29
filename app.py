@@ -449,18 +449,18 @@ def import_inventory():
             updated_count = 0
             
             for row in csv_input:
-                # Extract fields based on your expected CSV headers
-                name = row.get('Product Name', '').strip().title()
-                
-                try:
-                    purchase_price = float(row.get('Purchase Price', 0))
-                    selling_price = float(row.get('Selling Price', 0))
-                    stock = int(row.get('Stock', 0))
-                except ValueError:
-                    continue # Skip rows with invalid numbers
+                # Check both Title Case and snake_case headers
+                name = (row.get('Product Name') or row.get('product_name') or '').strip().title()
                 
                 if not name:
                     continue
+
+                try:
+                    purchase_price = float(row.get('Purchase Price') or row.get('purchase_price') or 0)
+                    selling_price = float(row.get('Selling Price') or row.get('selling_price') or 0)
+                    stock = int(float(row.get('Stock') or row.get('current_stock') or 0))
+                except (ValueError, TypeError):
+                    continue # Skip rows with invalid numbers
                     
                 min_sp = purchase_price + (purchase_price * 0.5)
 
@@ -494,6 +494,8 @@ def import_inventory():
         flash("Unsupported file type. Please upload a .csv file.", "danger")
 
     return redirect("/inventory")
+
+
 
 @app.route("/return_item", methods=["POST"])
 @login_required
