@@ -441,30 +441,50 @@ def import_inventory():
 
     if file and file.filename.endswith('.csv'):
         try:
-            # Read the CSV file directly from memory
-            stream = io.StringIO(file.stream.read().decode("UTF8"), newline=None)
-            csv_input = csv.DictReader(stream)
+            # decode with 'utf-8-sig' to automatically remove Excel hidden BOM characters
+            raw_text = file.stream.read().decode("utf-8-sig")
+            
+            # Detect whether Excel used comma (,) or semicolon (;)
+            first_line = raw_text.splitlines()[0] if raw_text else ""
+            delimiter = ';' if ';' in first_line and ',' not in first_line else ','
+            
+            stream = io.StringIO(raw_text, newline=None)
+            csv_input = csv.DictReader(stream, delimiter=delimiter)
             
             imported_count = 0
             updated_count = 0
             
             for row in csv_input:
-                # Check both Title Case and snake_case headers
-                name = (row.get('Product Name') or row.get('product_name') or '').strip().title()
+                # Clean up dictionary keys (lowercase, strip whitespace and underscores)
+                clean_row = {str(k).strip().lower().replace('_', ' '): str(v).strip() for k, v in row.items() if k}
+                
+                # Flexible product name detection
+                name = (
+                    clean_row.get('product name') or 
+                    clean_row.get('product') or 
+                    clean_row.get('name') or 
+                    clean_row.get('item name') or 
+                    clean_row.get('item') or ''
+                ).strip().title()
                 
                 if not name:
                     continue
 
                 try:
-                    purchase_price = float(row.get('Purchase Price') or row.get('purchase_price') or 0)
-                    selling_price = float(row.get('Selling Price') or row.get('selling_price') or 0)
-                    stock = int(float(row.get('Stock') or row.get('current_stock') or 0))
+                    # Flexible price & stock key detection
+                    p_price = clean_row.get('purchase price') or clean_row.get('buy price') or clean_row.get('cost') or 0
+                    s_price = clean_row.get('selling price') or clean_row.get('sell price') or clean_row.get('price') or 0
+                    stk = clean_row.get('stock') or clean_row.get('current stock') or clean_row.get('qty') or clean_row.get('quantity') or 0
+
+                    purchase_price = float(p_price)
+                    selling_price = float(s_price)
+                    stock = int(float(stk))
                 except (ValueError, TypeError):
-                    continue # Skip rows with invalid numbers
+                    continue
                     
                 min_sp = purchase_price + (purchase_price * 0.5)
 
-                # Check if product already exists to avoid duplicates
+                # Check if product exists in database
                 existing_product = Product.query.filter(Product.name.ilike(name)).first()
                 
                 if existing_product:
@@ -485,16 +505,19 @@ def import_inventory():
                     imported_count += 1
             
             db.session.commit()
-            flash(f"Import successful! Added {imported_count} new products and updated {updated_count} existing products.", "success")
+            
+            if imported_count == 0 and updated_count == 0:
+                flash(f"Import finished, but 0 items matched. Headers found in CSV: {list(first_line.split(delimiter))}", "warning")
+            else:
+                flash(f"Import successful! Added {imported_count} new products and updated {updated_count} existing products.", "success")
             
         except Exception as e:
             db.session.rollback()
-            flash(f"Error processing the CSV file: {str(e)}", "danger")
+            flash(f"Error processing CSV: {str(e)}", "danger")
     else:
         flash("Unsupported file type. Please upload a .csv file.", "danger")
 
     return redirect("/inventory")
-
 
 
 @app.route("/return_item", methods=["POST"])
