@@ -1,9 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <h1 class="fw-bold">Dashboard Overview</h1>
-        <p class="text-muted">Welcome back, {{ current_user.username }}. Select a module below to get started.</p>
+<div class="dashboard-hero">
+    <div>
+        <h1>Dashboard Overview</h1>
+        <p class="text-muted mb-0">Welcome back, {{ current_user.username }}. Select a module below to get started.</p>
+    </div>
+    <div class="profit-figure">
+        <div class="value">{{ today_gross_profit | currency }}</div>
+        <div class="label">Gross profit today</div>
     </div>
 </div>
 

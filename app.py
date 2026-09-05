@@ -2,14 +2,17 @@ import re
 import csv
 import os
 import io
+import atexit
 from functools import wraps
 from flask import Response
 from flask import Flask, render_template, request, redirect, flash, url_for, jsonify
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from models import db, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, Quotation, ServiceBooking, ToolLoan
+from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, Quotation, ServiceBooking, ToolLoan, SMSLog
+from apscheduler.schedulers.background import BackgroundScheduler
+from sms_service import send_sms
 
 app = Flask(__name__)
 
@@ -18,7 +21,6 @@ app = Flask(__name__)
 # -------------------
 app.config['SECRET_KEY'] = 'timos_secret_key_change_in_production'
 
-# Dynamic Database URI: Uses Render's PostgreSQL if available, otherwise falls back to local SQLite
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     if database_url.startswith("postgres://"):
@@ -59,6 +61,115 @@ def currency_format(value):
         return "KSh 0.00"
     return f"KSh {value:,.2f}"
 
+# --- Quantity/Stock Filter ---
+# Formats numbers that are now allowed to have decimals (e.g. 2.5 metres of
+# cable) so a whole number still displays as "50" rather than "50.0".
+@app.template_filter('qty')
+def qty_format(value):
+    if value is None:
+        return "0"
+    value = float(value)
+    if value == int(value):
+        return f"{int(value):,}"
+    return f"{value:,.2f}".rstrip('0').rstrip('.')
+
+# Plain-Python version of the same formatting, for use inside flash messages
+# (which aren't run through Jinja filters).
+def fmt_qty(value):
+    return qty_format(value)
+
+# --- Real-Time Gross Profit Injector ---
+@app.context_processor
+def inject_today_profit():
+    """Calculates daily gross profit across all templates."""
+    if not current_user.is_authenticated:
+        return dict(today_gross_profit=0.0)
+    
+    today_start = get_eat_time().replace(hour=0, minute=0, second=0, microsecond=0)
+    sales_today = Sale.query.filter(Sale.date >= today_start).all()
+    
+    daily_profit = 0
+    for sale in sales_today:
+        if sale.status != "Cancelled":
+            for item in sale.items:
+                returned_qty = db.session.query(func.sum(ReturnItem.quantity)).filter_by(
+                    sale_id=sale.id, product_id=item.product_id).scalar() or 0
+                effective_qty = item.quantity - returned_qty
+                
+                if effective_qty > 0:
+                    daily_profit += (item.price - item.product.purchase_price) * effective_qty
+                    
+    return dict(today_gross_profit=daily_profit)
+
+# -------------------
+# Background Job: Reminders
+# -------------------
+def process_reminders():
+    """Background task checking for booked appointments & 24h overdue debts"""
+    with app.app_context():
+        now = get_eat_time()
+        
+        # 1. Appointment Reminders (Upcoming in next 24 hrs)
+        upcoming_bookings = ServiceBooking.query.filter(
+            ServiceBooking.booking_date > now,
+            ServiceBooking.booking_date <= now + timedelta(hours=24),
+            ServiceBooking.reminder_sent == False,
+            ServiceBooking.status.in_(['Pending', 'Confirmed'])
+        ).all()
+        
+        for b in upcoming_bookings:
+            cust = b.customer
+            cust_name = cust.name if cust else "Customer"
+            phone = cust.contact_info if cust else None
+
+            message = (
+                f"Hi {cust_name}, reminder from Timos: your '{b.service_name}' appointment is "
+                f"scheduled for {b.booking_date.strftime('%d %b %Y, %I:%M %p')}. See you then!"
+            )
+            success, status_label = send_sms(phone, message)
+
+            db.session.add(SMSLog(
+                recipient_name=cust_name, phone_number=phone, message=message,
+                category="Booking Reminder", status=status_label, date_sent=get_eat_time()
+            ))
+
+            print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — SMS {status_label}")
+            b.reminder_sent = True
+
+        # 2. Debt Reminders (Older than 24 hours)
+        overdue_debts = Debt.query.filter(
+            Debt.date_taken <= now - timedelta(hours=24),
+            Debt.status == 'Active',
+            Debt.reminder_sent == False
+        ).all()
+        
+        for d in overdue_debts:
+            cust = d.customer
+            phone = cust.contact_info if cust else None
+
+            message = (
+                f"Hi {d.customer_name}, this is a reminder from Timos that you have an outstanding "
+                f"balance of KSh {d.balance:,.2f}. Kindly clear at your earliest convenience. Thank you!"
+            )
+            success, status_label = send_sms(phone, message)
+
+            db.session.add(SMSLog(
+                recipient_name=d.customer_name, phone_number=phone, message=message,
+                category="Debt Reminder", status=status_label, date_sent=get_eat_time()
+            ))
+
+            print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — SMS {status_label}")
+            d.reminder_sent = True
+
+        db.session.commit()
+
+# Init Scheduler
+scheduler = BackgroundScheduler()
+scheduler.add_job(func=process_reminders, trigger="interval", minutes=1)
+scheduler.start()
+atexit.register(lambda: scheduler.shutdown())
+
+
 # -------------------
 # Authentication Routes
 # -------------------
@@ -97,7 +208,7 @@ def logout():
 def home():
     return render_template("home.html") 
 
-# 1. CUSTOMERS (Admin Only)
+# 1. CUSTOMERS
 @app.route("/customers", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -109,14 +220,10 @@ def customers():
         contact_info = data.get("contact_info", "").strip()
 
         if not re.match(r"^[A-Za-z\s]+$", name):
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "error", "message": "Customer name must contain only letters and spaces."}), 400
             flash("Error: Customer name must contain only letters and spaces.", "danger")
             return redirect("/customers")
             
         if len(contact_info) < 10:
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "error", "message": "Contact info must be at least 10 characters/numbers long."}), 400
             flash("Error: Contact info must be at least 10 characters/numbers long.", "danger")
             return redirect("/customers")
 
@@ -124,15 +231,9 @@ def customers():
             new_customer = Customer(name=name, contact_info=contact_info)
             db.session.add(new_customer)
             db.session.commit()
-            
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "success", "message": "Customer added successfully!"}), 200
-                
             flash("Customer added successfully!", "success")
         except IntegrityError:
             db.session.rollback()
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "error", "message": f"Customer name '{name}' already exists!"}), 400
             flash(f"Error: Customer name '{name}' already exists!", "danger")
             
         return redirect("/customers")
@@ -157,8 +258,6 @@ def edit_customer(pid):
     contact_info = data.get("contact_info", "").strip()
 
     if not re.match(r"^[A-Za-z\s]+$", name):
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": "Customer name must contain only letters and spaces."}), 400
         flash("Error: Customer name must contain only letters and spaces.", "danger")
         return redirect("/customers")
 
@@ -167,18 +266,14 @@ def edit_customer(pid):
     
     try:
         db.session.commit()
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "success", "message": "Customer updated successfully!"}), 200
         flash("Customer updated successfully!", "success")
     except IntegrityError:
         db.session.rollback()
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": "That name is already taken."}), 400
         flash("Error: That name is already taken by another customer.", "danger")
         
     return redirect("/customers")
 
-# 2. DEBTS (Staff + Admin)
+# 2. DEBTS
 @app.route("/debts", methods=["GET", "POST"])
 @login_required
 def debts():
@@ -220,7 +315,7 @@ def debts():
                 customer_name=customer_obj.name, 
                 amount=amount, 
                 balance=amount,
-                date_taken=datetime.now()
+                date_taken=get_eat_time()
             )
             db.session.add(new_debt)
             flash("New debt recorded successfully!", "success")
@@ -255,7 +350,16 @@ def edit_debt(id):
     flash("Debt balance updated successfully.", "success")
     return redirect("/debts")
 
-# 3. PAYMENTS (Staff + Admin)
+@app.route("/debts/delete/<int:id>", methods=["POST"])
+@login_required
+def delete_debt(id):
+    debt = Debt.query.get_or_404(id)
+    db.session.delete(debt)
+    db.session.commit()
+    flash(f"Debt record for {debt.customer_name} permanently deleted.", "success")
+    return redirect("/debts")
+
+# 3. PAYMENTS
 @app.route("/payments", methods=["GET", "POST"])
 @login_required
 def payments():
@@ -274,10 +378,10 @@ def payments():
             return redirect("/payments")
             
         if amount > debt.balance:
-            flash(f"Error: Payment cannot exceed outstanding balance.", "danger")
+            flash("Error: Payment cannot exceed outstanding balance.", "danger")
             return redirect("/payments")
 
-        new_payment = Payment(debt_id=debt_id, amount=amount, date=datetime.now())
+        new_payment = Payment(debt_id=debt_id, amount=amount, date=get_eat_time())
         db.session.add(new_payment)
 
         debt.balance -= amount
@@ -292,7 +396,23 @@ def payments():
     payments = Payment.query.order_by(Payment.date.desc()).all()
     return render_template("payments.html", debts=debts, payments=payments)
 
-# 4. INVENTORY & RETURNS (Admin Only)
+@app.route("/payments/delete/<int:id>", methods=["POST"])
+@login_required
+def delete_payment(id):
+    payment = Payment.query.get_or_404(id)
+    debt = payment.debt
+    
+    # Restore Debt Balance
+    debt.balance += payment.amount
+    if debt.balance > 0 and debt.status == "Cleared":
+        debt.status = "Active"
+        
+    db.session.delete(payment)
+    db.session.commit()
+    flash(f"Payment deleted and Ksh {payment.amount} returned to {debt.customer_name}'s balance.", "success")
+    return redirect("/payments")
+
+# 4. INVENTORY & RETURNS (Unchanged bulk operations)
 @app.route("/inventory", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -302,28 +422,21 @@ def inventory():
         
         raw_name = data.get("name", "").strip()
         try:
-            purchase_price = int(data.get("purchase_price", 0))
+            purchase_price = float(data.get("purchase_price", 0))
             selling_price = float(data.get("selling_price", 0))
-            added_stock = int(data.get("stock", 0))
+            added_stock = float(data.get("stock", 0))
         except ValueError:
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "error", "message": "Invalid numeric input"}), 400
             flash("Error: Invalid numeric input.", "danger")
             return redirect("/inventory")
 
         if added_stock <= 0:
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "error", "message": "Restock quantity must be greater than zero."}), 400
             flash("Error: Restock quantity must be greater than zero.", "danger")
             return redirect("/inventory")
 
         min_sp = purchase_price + purchase_price * 0.5
-
-        if selling_price < min_sp:
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "error", "message": f"Selling price cannot be less than Minimum S.P ({min_sp})"}), 400
-            flash(f"Error: Selling price cannot be less than Minimum S.P (KSh {min_sp:,.2f}).", "danger")
-            return redirect("/inventory")
+        # Note: selling price is no longer required to be above min_sp.
+        # min_sp is still calculated and stored (so it keeps showing
+        # correctly on the Inventory page) — it just doesn't block saving.
 
         existing_product = Product.query.filter(Product.name.ilike(raw_name)).first()
 
@@ -332,30 +445,20 @@ def inventory():
             existing_product.purchase_price = purchase_price
             existing_product.selling_price = selling_price
             existing_product.min_selling_price = min_sp
-            
             db.session.commit()
-            if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                return jsonify({"status": "success", "message": "Stock added successfully!"}), 200
-            flash(f"Restocked! Added {added_stock} units to '{existing_product.name}'.", "success")
+            flash(f"Restocked! Added {fmt_qty(added_stock)} units to '{existing_product.name}'.", "success")
         else:
             formatted_name = raw_name.title()
             try:
                 new_product = Product(
-                    name=formatted_name,
-                    purchase_price=purchase_price,
-                    min_selling_price=min_sp,
-                    selling_price=selling_price,
-                    stock=added_stock
+                    name=formatted_name, purchase_price=purchase_price, min_selling_price=min_sp,
+                    selling_price=selling_price, stock=added_stock
                 )
                 db.session.add(new_product)
                 db.session.commit()
-                if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                    return jsonify({"status": "success", "message": "Product added successfully!"}), 200
                 flash(f"New product '{formatted_name}' added to inventory!", "success")
             except IntegrityError:
                 db.session.rollback()
-                if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-                    return jsonify({"status": "error", "message": "Product creation conflict."}), 400
                 flash("Error: Product creation conflict.", "danger")
 
         return redirect("/inventory")
@@ -364,11 +467,9 @@ def inventory():
     max_stock = request.args.get("max_stock", "")
     
     query = Product.query
-    
     if search_query:
         sq_no_space = search_query.replace(" ", "")
         query = query.filter(func.replace(Product.name, ' ', '').ilike(f"%{sq_no_space}%"))
-        
     if max_stock.isdigit():
         query = query.filter(Product.stock <= int(max_stock))
 
@@ -389,7 +490,7 @@ def edit_inventory(id):
     try:
         product.purchase_price = float(data.get("purchase_price", product.purchase_price))
         product.selling_price = float(data.get("selling_price", product.selling_price))
-        product.stock = int(data.get("stock", product.stock))
+        product.stock = float(data.get("stock", product.stock))
     except ValueError:
         pass
         
@@ -397,13 +498,9 @@ def edit_inventory(id):
     
     try:
         db.session.commit()
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "success", "message": "Product updated securely."}), 200
         flash("Product updated securely.", "success")
     except IntegrityError:
         db.session.rollback()
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": "Ensure product name is unique."}), 400
         flash("Update failed. Ensure product name is unique.", "danger")
     return redirect("/inventory")
 
@@ -415,13 +512,9 @@ def delete_inventory(id):
     try:
         db.session.delete(product)
         db.session.commit()
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "success", "message": "Product deleted."}), 200
         flash("Product deleted securely.", "success")
     except IntegrityError:
         db.session.rollback()
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": "Cannot delete product linked to past logs."}), 400
         flash("Cannot delete product because it exists in past transaction logs. Consider editing stock to 0 instead.", "danger")
     return redirect("/inventory")
 
@@ -429,96 +522,84 @@ def delete_inventory(id):
 @login_required
 @admin_required
 def import_inventory():
-    if 'file' not in request.files:
-        flash("No file part in the request.", "danger")
-        return redirect("/inventory")
-        
-    file = request.files['file']
-    
-    if file.filename == '':
-        flash("No file selected.", "danger")
+    file = request.files.get("file")
+    if not file or file.filename == "":
+        flash("Error: No file was selected.", "danger")
         return redirect("/inventory")
 
-    if file and file.filename.endswith('.csv'):
+    if not file.filename.lower().endswith(".csv"):
+        flash("Error: Please upload a .csv file.", "danger")
+        return redirect("/inventory")
+
+    try:
+        stream = io.StringIO(file.stream.read().decode("utf-8-sig"), newline=None)
+        reader = csv.DictReader(stream)
+    except Exception:
+        flash("Error: Couldn't read that file. Make sure it's a valid CSV.", "danger")
+        return redirect("/inventory")
+
+    # Matches the columns produced by the "Export CSV" button, so a file
+    # exported from this app can always be re-imported unchanged.
+    required_columns = {"Product Name", "Purchase Price", "Selling Price", "Stock"}
+    if not reader.fieldnames or not required_columns.issubset(set(reader.fieldnames)):
+        flash(
+            "Error: That CSV is missing required columns. It needs: Product Name, Purchase Price, "
+            "Selling Price, Stock. Tip: use the 'Export CSV' button first to see the exact format expected.",
+            "danger"
+        )
+        return redirect("/inventory")
+
+    added_count = 0
+    restocked_count = 0
+    skipped_rows = []
+
+    for row_num, row in enumerate(reader, start=2):  # row 1 is the header
+        raw_name = (row.get("Product Name") or "").strip()
+        if not raw_name:
+            skipped_rows.append(f"Row {row_num}: missing product name")
+            continue
+
         try:
-            # decode with 'utf-8-sig' to automatically remove Excel hidden BOM characters
-            raw_text = file.stream.read().decode("utf-8-sig")
-            
-            # Detect whether Excel used comma (,) or semicolon (;)
-            first_line = raw_text.splitlines()[0] if raw_text else ""
-            delimiter = ';' if ';' in first_line and ',' not in first_line else ','
-            
-            stream = io.StringIO(raw_text, newline=None)
-            csv_input = csv.DictReader(stream, delimiter=delimiter)
-            
-            imported_count = 0
-            updated_count = 0
-            
-            for row in csv_input:
-                # Clean up dictionary keys (lowercase, strip whitespace and underscores)
-                clean_row = {str(k).strip().lower().replace('_', ' '): str(v).strip() for k, v in row.items() if k}
-                
-                # Flexible product name detection
-                name = (
-                    clean_row.get('product name') or 
-                    clean_row.get('product') or 
-                    clean_row.get('name') or 
-                    clean_row.get('item name') or 
-                    clean_row.get('item') or ''
-                ).strip().title()
-                
-                if not name:
-                    continue
+            purchase_price = float(row.get("Purchase Price", 0))
+            selling_price = float(row.get("Selling Price", 0))
+            stock = float(row.get("Stock", 0))
+        except (ValueError, TypeError):
+            skipped_rows.append(f"Row {row_num} ('{raw_name}'): one of the numbers isn't valid")
+            continue
 
-                try:
-                    # Flexible price & stock key detection
-                    p_price = clean_row.get('purchase price') or clean_row.get('buy price') or clean_row.get('cost') or 0
-                    s_price = clean_row.get('selling price') or clean_row.get('sell price') or clean_row.get('price') or 0
-                    stk = clean_row.get('stock') or clean_row.get('current stock') or clean_row.get('qty') or clean_row.get('quantity') or 0
+        min_sp = purchase_price + purchase_price * 0.5
+        # Note: unlike the manual "add product" form, imported rows are NOT
+        # rejected for having a selling price below min_sp. The minimum is
+        # still calculated and stored on the product (so it still shows
+        # correctly everywhere else in the app) — it just doesn't block
+        # the import itself.
 
-                    purchase_price = float(p_price)
-                    selling_price = float(s_price)
-                    stock = int(float(stk))
-                except (ValueError, TypeError):
-                    continue
-                    
-                min_sp = purchase_price + (purchase_price * 0.5)
+        existing_product = Product.query.filter(Product.name.ilike(raw_name)).first()
+        if existing_product:
+            existing_product.stock += stock
+            existing_product.purchase_price = purchase_price
+            existing_product.selling_price = selling_price
+            existing_product.min_selling_price = min_sp
+            restocked_count += 1
+        else:
+            new_product = Product(
+                name=raw_name.title(), purchase_price=purchase_price, min_selling_price=min_sp,
+                selling_price=selling_price, stock=stock
+            )
+            db.session.add(new_product)
+            added_count += 1
 
-                # Check if product exists in database
-                existing_product = Product.query.filter(Product.name.ilike(name)).first()
-                
-                if existing_product:
-                    existing_product.stock += stock
-                    existing_product.purchase_price = purchase_price
-                    existing_product.selling_price = selling_price
-                    existing_product.min_selling_price = min_sp
-                    updated_count += 1
-                else:
-                    new_product = Product(
-                        name=name,
-                        purchase_price=purchase_price,
-                        min_selling_price=min_sp,
-                        selling_price=selling_price,
-                        stock=stock
-                    )
-                    db.session.add(new_product)
-                    imported_count += 1
-            
-            db.session.commit()
-            
-            if imported_count == 0 and updated_count == 0:
-                flash(f"Import finished, but 0 items matched. Headers found in CSV: {list(first_line.split(delimiter))}", "warning")
-            else:
-                flash(f"Import successful! Added {imported_count} new products and updated {updated_count} existing products.", "success")
-            
-        except Exception as e:
-            db.session.rollback()
-            flash(f"Error processing CSV: {str(e)}", "danger")
+    db.session.commit()
+
+    summary = f"Import complete: {added_count} new product(s) added, {restocked_count} restocked."
+    if skipped_rows:
+        shown = "; ".join(skipped_rows[:5])
+        more = f" (+{len(skipped_rows) - 5} more)" if len(skipped_rows) > 5 else ""
+        flash(f"{summary} Skipped {len(skipped_rows)} row(s): {shown}{more}", "warning")
     else:
-        flash("Unsupported file type. Please upload a .csv file.", "danger")
+        flash(summary, "success")
 
     return redirect("/inventory")
-
 
 @app.route("/return_item", methods=["POST"])
 @login_required
@@ -530,21 +611,16 @@ def return_item():
     product_id = data.get("product_id")
     
     try:
-        return_qty = int(data.get("return_qty", 0))
+        return_qty = float(data.get("return_qty", 0))
     except ValueError:
         return_qty = 0
 
     if return_qty <= 0:
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": "Return quantity must be greater than zero."}), 400
         flash("Error: Return quantity must be greater than zero.", "danger")
         return redirect(request.referrer or "/reports")
 
     sale_item = SaleItem.query.filter_by(sale_id=sale_id, product_id=product_id).first()
-    
     if not sale_item:
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": "Item not found in this transaction."}), 400
         flash("Error: Item not found in this transaction.", "danger")
         return redirect(request.referrer or "/reports")
 
@@ -552,12 +628,10 @@ def return_item():
     available_to_return = sale_item.quantity - returned_already
 
     if return_qty > available_to_return:
-        if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-            return jsonify({"status": "error", "message": f"Cannot return {return_qty} units. Only {available_to_return} left."}), 400
-        flash(f"Error: Cannot return {return_qty} units. Only {available_to_return} unreturned units remain.", "danger")
+        flash(f"Error: Cannot return {fmt_qty(return_qty)} units. Only {fmt_qty(available_to_return)} unreturned units remain.", "danger")
         return redirect(request.referrer or "/reports")
         
-    ret = ReturnItem(sale_id=sale_id, product_id=product_id, quantity=return_qty, date_returned=datetime.now())
+    ret = ReturnItem(sale_id=sale_id, product_id=product_id, quantity=return_qty, date_returned=get_eat_time())
     db.session.add(ret)
 
     product = Product.query.get(product_id)
@@ -567,6 +641,7 @@ def return_item():
     sale = Sale.query.get(sale_id)
     sale.total_amount -= refund_amount
 
+    # Auto-handle debts
     if sale.sale_type == "Debt" and sale.customer_id:
         active_debt = Debt.query.filter_by(customer_id=sale.customer_id, status="Active").first()
         if active_debt:
@@ -577,14 +652,10 @@ def return_item():
                 active_debt.status = "Cancelled"
 
     db.session.commit()
-    
-    if request.is_json or request.headers.get('X-Offline-Sync') == 'true':
-        return jsonify({"status": "success", "message": "Return processed successfully!"}), 200
-        
     flash(f"Successfully returned {return_qty}x {product.name}.", "success")
     return redirect(request.referrer or "/reports")
 
-# 5. SALES (Staff + Admin)
+# 5. SALES
 @app.route("/sales", methods=["GET", "POST"])
 @login_required
 def sales():
@@ -593,9 +664,10 @@ def sales():
         new_customer_name = request.form.get("new_customer_name")
         product_id = request.form.get("product_id")
         sale_type = request.form.get("sale_type")
+        custom_price_str = request.form.get("custom_price")
         
         try:
-            quantity = int(request.form.get("quantity", 0))
+            quantity = float(request.form.get("quantity", 0))
         except ValueError:
             quantity = 0
 
@@ -604,9 +676,8 @@ def sales():
             return redirect("/sales")
 
         product = Product.query.get(product_id)
-        
         if quantity > product.stock:
-            flash(f"Error: Only {product.stock} left in stock for {product.name}.", "danger")
+            flash(f"Error: Only {fmt_qty(product.stock)} left in stock for {product.name}.", "danger")
             return redirect("/sales")
 
         if new_customer_name:
@@ -623,17 +694,26 @@ def sales():
                 flash("Error: You cannot record a Debt for an unknown walk-in customer.", "danger")
                 return redirect("/sales")
 
-        total_price = product.selling_price * quantity
+        # Custom Pricing Override
+        if custom_price_str and custom_price_str.strip():
+            try:
+                unit_price = float(custom_price_str)
+            except ValueError:
+                unit_price = product.selling_price
+        else:
+            unit_price = product.selling_price
 
-        new_sale = Sale(customer_id=customer_id, total_amount=total_price, sale_type=sale_type, date=datetime.now())
+        total_price = unit_price * quantity
+
+        new_sale = Sale(customer_id=customer_id, total_amount=total_price, sale_type=sale_type, date=get_eat_time())
         db.session.add(new_sale)
         db.session.flush()
 
-        sale_item = SaleItem(sale_id=new_sale.id, product_id=product_id, quantity=quantity, price=product.selling_price)
+        sale_item = SaleItem(sale_id=new_sale.id, product_id=product_id, quantity=quantity, price=unit_price)
         db.session.add(sale_item)
-
         product.stock -= quantity
 
+        # Log Debt
         if sale_type == "Debt":
             active_debt = Debt.query.filter_by(customer_id=customer_id, status="Active").first()
             customer_obj = Customer.query.get(customer_id)
@@ -644,11 +724,8 @@ def sales():
                 active_debt.balance += total_price
             else:
                 new_debt = Debt(
-                    customer_id=customer_id, 
-                    customer_name=cust_name,
-                    amount=total_price, 
-                    balance=total_price, 
-                    date_taken=datetime.now()
+                    customer_id=customer_id, customer_name=cust_name, amount=total_price, 
+                    balance=total_price, date_taken=get_eat_time()
                 )
                 db.session.add(new_debt)
 
@@ -658,9 +735,9 @@ def sales():
 
     customers = Customer.query.all()
     products = Product.query.filter(Product.stock > 0).all()
-    sales = Sale.query.order_by(Sale.date.desc()).limit(50).all()
+    sales_list = Sale.query.order_by(Sale.date.desc()).limit(50).all()
     
-    return render_template("sales.html", customers=customers, products=products, sales=sales, ReturnItem=ReturnItem, func=func, db=db)
+    return render_template("sales.html", customers=customers, products=products, sales=sales_list, ReturnItem=ReturnItem, func=func, db=db)
 
 @app.route("/sales/cancel/<int:sale_id>", methods=["POST"])
 @login_required
@@ -681,12 +758,54 @@ def cancel_sale(sale_id):
             product = Product.query.get(item.product_id)
             if product:
                 product.stock += unreturned_qty
+                
+    # Auto Cancel associated active Debt balances if debt-based
+    if sale.sale_type == "Debt" and sale.customer_id:
+        active_debt = Debt.query.filter_by(customer_id=sale.customer_id, status="Active").first()
+        if active_debt:
+            active_debt.amount -= sale.total_amount
+            active_debt.balance -= sale.total_amount
+            if active_debt.balance <= 0:
+                active_debt.balance = 0
+                active_debt.status = "Cancelled"
             
     db.session.commit()
-    flash(f"Sale #{sale.id} fully cancelled.", "success")
+    flash(f"Sale #{sale.id} fully cancelled and reversed.", "success")
     return redirect(request.referrer or "/sales")
 
-# 6. QUOTATIONS (Admin Only)
+@app.route("/sales/delete/<int:sale_id>", methods=["POST"])
+@login_required
+def delete_sale(sale_id):
+    sale = Sale.query.get_or_404(sale_id)
+    
+    # Process reversion if the sale wasn't officially 'Cancelled' yet
+    if sale.status != "Cancelled":
+        for item in sale.items:
+            returned_qty = db.session.query(func.sum(ReturnItem.quantity)).filter_by(sale_id=sale.id, product_id=item.product_id).scalar() or 0
+            unreturned_qty = item.quantity - returned_qty
+            
+            if unreturned_qty > 0:
+                product = Product.query.get(item.product_id)
+                if product:
+                    product.stock += unreturned_qty
+
+        # Adjust Debt Auto-cancellation
+        if sale.sale_type == "Debt" and sale.customer_id:
+            active_debt = Debt.query.filter_by(customer_id=sale.customer_id, status="Active").first()
+            if active_debt:
+                active_debt.amount -= sale.total_amount
+                active_debt.balance -= sale.total_amount
+                if active_debt.balance <= 0:
+                    active_debt.balance = 0
+                    active_debt.status = "Cancelled"
+
+    db.session.delete(sale)
+    db.session.commit()
+    flash(f"Sale #{sale_id} record physically deleted.", "success")
+    return redirect(request.referrer or "/sales")
+
+
+# 6. QUOTATIONS
 @app.route("/quotations", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -700,8 +819,8 @@ def quotations():
             flash("Error: Amount must be greater than zero.", "danger")
             return redirect("/quotations")
             
-        valid_until = datetime.now() + timedelta(days=valid_days)
-        new_quote = Quotation(customer_id=customer_id, total_amount=amount, date=datetime.now(), valid_until=valid_until)
+        valid_until = get_eat_time() + timedelta(days=valid_days)
+        new_quote = Quotation(customer_id=customer_id, total_amount=amount, date=get_eat_time(), valid_until=valid_until)
         db.session.add(new_quote)
         db.session.commit()
         flash("Quotation saved successfully!", "success")
@@ -711,25 +830,24 @@ def quotations():
     quotations = Quotation.query.all()
     return render_template("quotations.html", customers=customers, quotations=quotations)
 
-# 7. REPORTS (Admin Only)
+# 7. REPORTS
 @app.route("/reports", methods=["GET", "POST"])
 @login_required
 @admin_required
 def reports():
-    end_date_dt = datetime.now()
+    end_date_dt = get_eat_time()
     start_date_dt = end_date_dt - timedelta(days=7)
 
     customer_id = None
-    
     if request.method == "POST":
         customer_id = request.form.get("customer_id")
         req_start = request.form.get("start_date")
         req_end = request.form.get("end_date")
         
         if req_start:
-            start_date_dt = datetime.strptime(req_start, "%Y-%m-%d")
+            start_date_dt = datetime.strptime(req_start, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=3)))
         if req_end:
-            end_date_dt = datetime.strptime(req_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            end_date_dt = datetime.strptime(req_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone(timedelta(hours=3)))
 
     query_debts = Debt.query.filter(Debt.status == "Active")
     if customer_id:
@@ -759,20 +877,14 @@ def reports():
                     profit += (item.price - item.product.purchase_price) * effective_qty
 
     customers = Customer.query.all()
+    recent_sms = SMSLog.query.order_by(SMSLog.date_sent.desc()).limit(20).all()
 
     return render_template(
-        "reports.html",
-        outstanding_debts=outstanding_debts,
-        total_payments=total_payments,
-        total_sales=total_sales,
-        profit=profit,
-        customers=customers,
-        start_date=start_date_dt.strftime("%Y-%m-%d"),
-        end_date=end_date_dt.strftime("%Y-%m-%d"),
-        sales_list=query_sales.all(),
-        ReturnItem=ReturnItem, 
-        func=func, 
-        db=db
+        "reports.html", outstanding_debts=outstanding_debts, total_payments=total_payments,
+        total_sales=total_sales, profit=profit, customers=customers,
+        start_date=start_date_dt.strftime("%Y-%m-%d"), end_date=end_date_dt.strftime("%Y-%m-%d"),
+        sales_list=query_sales.all(), ReturnItem=ReturnItem, func=func, db=db,
+        recent_sms=recent_sms
     )
 
 @app.route("/export/inventory")
@@ -780,7 +892,6 @@ def reports():
 @admin_required
 def export_inventory():
     products = Product.query.all()
-    
     def generate():
         yield 'ID,Product Name,Purchase Price,Minimum S.P,Selling Price,Stock\n'
         for p in products:
@@ -788,7 +899,8 @@ def export_inventory():
             
     return Response(generate(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=inventory_report.csv'})
 
-# 8. SERVICE BOOKINGS (Admin Only)
+
+# 8. SERVICE BOOKINGS
 @app.route("/bookings", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -804,22 +916,12 @@ def bookings():
         except ValueError:
             charge = 0
 
-        if charge < 0:
-            flash("Error: Charge cannot be negative.", "danger")
-            return redirect("/bookings")
-
-        booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M")
-
-        if booking_date.date() < datetime.today().date():
-            flash("Error: Service booking date cannot be in the past.", "danger")
-            return redirect("/bookings")
+        # Booking date passed without offset, map to UTC+3
+        booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone(timedelta(hours=3)))
 
         new_booking = ServiceBooking(
-            customer_id=customer_id,
-            service_name=service_name,
-            description=description,
-            booking_date=booking_date,
-            charge=charge
+            customer_id=customer_id, service_name=service_name, description=description, 
+            booking_date=booking_date, charge=charge
         )
         db.session.add(new_booking)
         db.session.commit()
@@ -844,7 +946,7 @@ def edit_booking(id):
         
     date_str = request.form.get("booking_date")
     if date_str:
-        booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
+        booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone(timedelta(hours=3)))
         
     db.session.commit()
     flash("Booking details updated successfully.", "success")
@@ -872,7 +974,7 @@ def cancel_booking(booking_id):
     return redirect("/bookings")
 
 
-# 9. TOOL LOANS (Staff + Admin)
+# 9. TOOL LOANS
 @app.route("/loans", methods=["GET", "POST"])
 @login_required
 def loans():
@@ -881,13 +983,8 @@ def loans():
         tool_name = request.form.get("tool_name").strip()
         return_date_str = request.form.get("return_date")
 
-        return_date = datetime.strptime(return_date_str, "%Y-%m-%d")
-
-        new_loan = ToolLoan(
-            customer_id=customer_id,
-            tool_name=tool_name,
-            return_date=return_date
-        )
+        return_date = datetime.strptime(return_date_str, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=3)))
+        new_loan = ToolLoan(customer_id=customer_id, tool_name=tool_name, return_date=return_date)
         db.session.add(new_loan)
         db.session.commit()
         flash("Tool loan recorded successfully!", "success")
@@ -901,7 +998,6 @@ from flask import send_from_directory
 
 @app.route('/sw.js')
 def sw():
-    # This serves sw.js from the static folder, but makes the browser think it's at the root (/)
     response = send_from_directory('static', 'sw.js')
     response.headers['Cache-Control'] = 'no-cache'
     return response
@@ -916,19 +1012,48 @@ def return_tool(loan_id):
     return redirect("/loans")
 
 # -------------------
-# Database Setup & Seeding (Runs for Gunicorn & Local)
+# Database Setup & Seeding
 # -------------------
 with app.app_context():
     db.create_all()
-    
-    # Ensure Admin exists and password stays updated
+
+    # One-time database upgrade, safe to run every time the app starts.
+    #
+    # This app used to store purchase price, stock, and sale/return quantities
+    # as whole-numbers-only. That's now changed to allow decimals (e.g. KSh
+    # 44.50, or 2.5 metres of cable). db.create_all() above only creates
+    # tables that don't exist yet — it does NOT change the structure of
+    # tables that already exist. So on a database that was already running
+    # before this update, those columns are quietly upgraded here.
+    #
+    # This only applies to the live Postgres database (DATABASE_URL is only
+    # set on Render). It's written so that running it again on an
+    # already-upgraded database does nothing and causes no harm.
+    if database_url:
+        with db.engine.connect() as conn:
+            column_upgrades = [
+                ("product", "purchase_price"),
+                ("product", "stock"),
+                ("sale_item", "quantity"),
+                ("return_item", "quantity"),
+            ]
+            for table, column in column_upgrades:
+                try:
+                    conn.execute(db.text(
+                        f"ALTER TABLE {table} ALTER COLUMN {column} TYPE FLOAT USING {column}::float"
+                    ))
+                    conn.commit()
+                except Exception:
+                    # Already upgraded, or the table/column doesn't exist yet
+                    # on a brand-new database — either way, safe to move on.
+                    conn.rollback()
+
     admin_user = User.query.filter_by(username="admin").first()
     if not admin_user:
         admin_user = User(username="admin", role="Admin")
         db.session.add(admin_user)
     admin_user.set_password(os.environ.get("ADMIN_PASSWORD", "pass364"))
 
-    # Ensure Staff exists and password stays updated
     staff_user = User.query.filter_by(username="staff").first()
     if not staff_user:
         staff_user = User(username="staff", role="Staff")
@@ -937,8 +1062,5 @@ with app.app_context():
         
     db.session.commit()
 
-# -------------------
-# Run App (Local only)
-# -------------------
 if __name__ == "__main__":
     app.run(debug=True)

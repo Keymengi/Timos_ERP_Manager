@@ -4,10 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Timos ERP Manager</title>
-    <!-- Local Bootstrap CSS -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Bootstrap CSS (loaded first so our theme below can override it cleanly) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <!-- Timos theme (fonts are self-hosted inside this file, no external calls) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Icon font used by buttons throughout the app (was missing before, so icons were invisible) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#1C2E38">
 </head>
 <body class="bg-light">
     <!-- Premium Navigation Bar (Using navbar-expand-xl to prevent link wrapping overflow) -->

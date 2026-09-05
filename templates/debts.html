@@ -66,12 +66,19 @@
                 <td>
                     {% if debt.status == 'Active' %}
                         <span class="badge bg-warning text-dark">Active</span>
+                    {% elif debt.status == 'Cancelled' %}
+                        <span class="badge bg-secondary">Cancelled</span>
                     {% else %}
                         <span class="badge bg-success">Cleared</span>
                     {% endif %}
                 </td>
                 <td class="text-center">
-                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ debt.id }}">Edit Balance</button>
+                    <div class="d-flex gap-1 justify-content-center">
+                        <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editModal{{ debt.id }}">Edit Balance</button>
+                        <form action="/debts/delete/{{ debt.id }}" method="POST" onsubmit="return confirm('Permanently delete this debt record?');" data-offline="true">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                        </form>
+                    </div>
                 </td>
             </tr>
 

@@ -1,33 +1,477 @@
-/* Cleaned up custom styling to work alongside Bootstrap */
+/* =====================================================================
+   TIMOS ERP — "Workshop Ledger" design system
+   =====================================================================
+   Design rationale: Timos is a back-office tool for a Kenyan hardware/
+   tools trade business — sales, credit, tool loans, service bookings.
+   The palette and type take their cues from that world: steel and
+   ochre (safety-tag amber) as the working colors, a slab serif for
+   structure (the way a signboard or a ledger header reads), and
+   tabular monospace figures for money and quantities, the way an
+   actual ledger book lines its numbers up.
+
+   This file is loaded AFTER bootstrap.min.css (see base.html) so it
+   can override Bootstrap's component classes directly, without needing
+   !important hacks.
+   ===================================================================== */
+
+/* ---------------------------------------------------------------------
+   0. Self-hosted fonts
+   --------------------------------------------------------------------- */
+@font-face {
+    font-family: "Zilla Slab";
+    src: url("../fonts/zilla-slab-500.woff2") format("woff2");
+    font-weight: 500;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Zilla Slab";
+    src: url("../fonts/zilla-slab-600.woff2") format("woff2");
+    font-weight: 600;
+    font-display: swap;
+}
+@font-face {
+    font-family: "Zilla Slab";
+    src: url("../fonts/zilla-slab-700.woff2") format("woff2");
+    font-weight: 700;
+    font-display: swap;
+}
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("../fonts/ibm-plex-sans-400.woff2") format("woff2");
+    font-weight: 400;
+    font-display: swap;
+}
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("../fonts/ibm-plex-sans-500.woff2") format("woff2");
+    font-weight: 500;
+    font-display: swap;
+}
+@font-face {
+    font-family: "IBM Plex Sans";
+    src: url("../fonts/ibm-plex-sans-600.woff2") format("woff2");
+    font-weight: 600;
+    font-display: swap;
+}
+@font-face {
+    font-family: "IBM Plex Mono";
+    src: url("../fonts/ibm-plex-mono-400.woff2") format("woff2");
+    font-weight: 400;
+    font-display: swap;
+}
+@font-face {
+    font-family: "IBM Plex Mono";
+    src: url("../fonts/ibm-plex-mono-500.woff2") format("woff2");
+    font-weight: 500;
+    font-display: swap;
+}
+@font-face {
+    font-family: "IBM Plex Mono";
+    src: url("../fonts/ibm-plex-mono-600.woff2") format("woff2");
+    font-weight: 600;
+    font-display: swap;
+}
+
+/* ---------------------------------------------------------------------
+   1. Design tokens
+   --------------------------------------------------------------------- */
+:root {
+    /* Base surfaces */
+    --ink: #23262B;              /* primary text - warm near-black, not pure black */
+    --ink-soft: #565C63;         /* secondary/muted text */
+    --paper: #EFEBE1;            /* app background - warm ledger paper */
+    --paper-raised: #FFFFFF;     /* card/panel surfaces */
+    --line: #DAD3C1;             /* hairline borders, table rules */
+    --line-strong: #C6BCA4;
+
+    /* Brand working colors */
+    --steel: #2E4756;            /* structural color - nav, headers, ink accents */
+    --steel-dark: #1C2E38;
+    --steel-tint: #E7EDEF;
+
+    --ochre: #BE7F2E;            /* primary action color - safety-tag amber */
+    --ochre-dark: #96631F;
+    --ochre-tint: #F6E9D3;
+
+    /* Status colors (used consistently for badges, alerts, buttons) */
+    --moss: #4C7A52;             /* success / cleared / paid */
+    --moss-tint: #E4EEE1;
+    --rust: #A23F2C;             /* danger / overdue / cancelled */
+    --rust-tint: #F5E2DC;
+    --amber-flag: #B8862B;       /* warning / pending */
+    --amber-flag-tint: #F5EAD4;
+
+    /* Type */
+    --font-display: "Zilla Slab", Georgia, "Times New Roman", serif;
+    --font-body: "IBM Plex Sans", -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+    --radius: 6px;
+    --radius-sm: 4px;
+    --shadow-card: 0 1px 2px rgba(28, 25, 20, 0.06), 0 1px 0 rgba(28, 25, 20, 0.04);
+}
+
+/* ---------------------------------------------------------------------
+   2. Base
+   --------------------------------------------------------------------- */
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 0.95rem;
 }
 
-/* Premium Card Look for Forms */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--steel-dark);
+    letter-spacing: -0.01em;
+}
+
+a {
+    color: var(--steel);
+}
+a:hover {
+    color: var(--ochre-dark);
+}
+
+/* Money / quantity figures line up like a real ledger */
+.text-mono, .money, td.money {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+::selection {
+    background: var(--ochre-tint);
+    color: var(--steel-dark);
+}
+
+/* Visible focus ring everywhere - accessibility floor */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible,
+.form-control:focus-visible,
+.form-select:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 2px solid var(--ochre);
+    outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------
+   3. Navigation
+   --------------------------------------------------------------------- */
+.navbar.bg-dark,
+.navbar-steel {
+    background-color: var(--steel-dark) !important;
+    border-bottom: 3px solid var(--ochre);
+}
+
+.navbar-brand {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 1.35rem;
+    letter-spacing: -0.01em;
+}
+.navbar-brand::before {
+    content: "";
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    background: var(--ochre);
+    border-radius: 50%;
+    margin-right: 8px;
+    margin-bottom: 2px;
+}
+
+.navbar-dark .navbar-nav .nav-link {
+    color: rgba(255, 255, 255, 0.78);
+    font-weight: 500;
+    padding: 0.55rem 0.85rem;
+    border-bottom: 2px solid transparent;
+    transition: color 120ms ease, border-color 120ms ease;
+}
+.navbar-dark .navbar-nav .nav-link:hover,
+.navbar-dark .navbar-nav .nav-link.active {
+    color: #fff;
+    border-bottom-color: var(--ochre);
+}
+
+/* ---------------------------------------------------------------------
+   4. Cards - two distinct treatments instead of one uniform kit
+   --------------------------------------------------------------------- */
+
+/* Panel: forms, table containers, general content wells */
 .erp-card {
-    background: white;
-    border-radius: 10px;
-    padding: 25px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
-    margin-bottom: 30px;
-    border: 1px solid #e9ecef;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--steel);
+    border-radius: var(--radius-sm);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 1.75rem;
 }
 
-/* Make tables look seamless */
+/* Bootstrap's default .card (used on the dashboard tiles) gets the
+   same restrained treatment, but as a "stat/index card" with a left
+   accent rule instead of a top rule, since these are navigational
+   entry points rather than content wells. */
+.card {
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--steel);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-card);
+}
+.card.text-white.bg-primary,
+.card.text-white.bg-success,
+.card.text-white.bg-danger,
+.card.text-white.bg-info {
+    border-left-width: 4px;
+    background: var(--steel-dark) !important;
+    border-left-color: var(--ochre);
+}
+.card .card-title {
+    font-family: var(--font-display);
+    font-weight: 600;
+}
+
+/* ---------------------------------------------------------------------
+   5. Buttons - flat, functional, one accent spent deliberately
+   --------------------------------------------------------------------- */
+.btn {
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.btn-primary,
+.btn-dark {
+    background-color: var(--ochre);
+    border-color: var(--ochre);
+    color: #fff;
+}
+.btn-primary:hover,
+.btn-dark:hover,
+.btn-primary:focus,
+.btn-dark:focus {
+    background-color: var(--ochre-dark);
+    border-color: var(--ochre-dark);
+    color: #fff;
+}
+
+.btn-outline-primary {
+    color: var(--steel);
+    border-color: var(--steel);
+}
+.btn-outline-primary:hover {
+    background-color: var(--steel);
+    border-color: var(--steel);
+    color: #fff;
+}
+
+.btn-secondary,
+.btn-outline-dark {
+    color: var(--steel-dark);
+    border-color: var(--line-strong);
+    background-color: transparent;
+}
+.btn-secondary:hover,
+.btn-outline-dark:hover {
+    background-color: var(--steel-tint);
+    border-color: var(--steel);
+    color: var(--steel-dark);
+}
+
+.btn-success {
+    background-color: var(--moss);
+    border-color: var(--moss);
+}
+.btn-success:hover {
+    background-color: #3d6642;
+    border-color: #3d6642;
+}
+
+.btn-danger,
+.btn-outline-danger:hover {
+    background-color: var(--rust);
+    border-color: var(--rust);
+}
+.btn-outline-danger {
+    color: var(--rust);
+    border-color: var(--rust);
+}
+
+.btn-warning {
+    background-color: var(--amber-flag);
+    border-color: var(--amber-flag);
+    color: #fff;
+}
+.btn-warning:hover {
+    background-color: #93691f;
+    border-color: #93691f;
+    color: #fff;
+}
+
+.btn-info {
+    background-color: var(--steel);
+    border-color: var(--steel);
+    color: #fff;
+}
+.btn-info:hover {
+    background-color: var(--steel-dark);
+    border-color: var(--steel-dark);
+    color: #fff;
+}
+
+/* ---------------------------------------------------------------------
+   6. Tables - ledger styling
+   --------------------------------------------------------------------- */
 .table {
-    background-color: white;
-    border-radius: 8px;
+    background-color: var(--paper-raised);
+    border-radius: var(--radius-sm);
     overflow: hidden;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.02);
+    box-shadow: var(--shadow-card);
 }
 
 .table th {
-    background-color: #343a40 !important;
-    color: white !important;
+    background-color: var(--steel-dark);
+    color: var(--paper);
+    font-weight: 600;
+    font-size: 0.82rem;
+    border-bottom: none;
+    vertical-align: middle;
 }
 
-/* Form inputs spacing */
+.table td {
+    vertical-align: middle;
+    border-color: var(--line);
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+    background-color: #FAF8F3;
+}
+
+.table-hover > tbody > tr:hover > * {
+    background-color: var(--ochre-tint);
+}
+
+/* Right-aligned columns (money/quantities) get tabular figures */
+.table td.text-end,
+.table th.text-end {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------------------
+   7. Forms
+   --------------------------------------------------------------------- */
 .form-label {
     font-weight: 600;
-    color: #495057;
+    color: var(--steel-dark);
+    font-size: 0.88rem;
+    margin-bottom: 0.35rem;
+}
+
+.form-control,
+.form-select {
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+    background-color: var(--paper-raised);
+    color: var(--ink);
+}
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--ochre);
+    box-shadow: 0 0 0 3px var(--ochre-tint);
+}
+
+/* ---------------------------------------------------------------------
+   8. Badges & alerts - status vocabulary specific to this app
+   --------------------------------------------------------------------- */
+.badge.bg-success { background-color: var(--moss) !important; }
+.badge.bg-danger  { background-color: var(--rust) !important; }
+.badge.bg-warning { background-color: var(--amber-flag) !important; color: #fff !important; }
+.badge.bg-secondary { background-color: var(--ink-soft) !important; }
+.badge.bg-primary { background-color: var(--steel) !important; }
+
+.alert {
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    border-left-width: 4px;
+}
+.alert-success {
+    background-color: var(--moss-tint);
+    border-left-color: var(--moss);
+    color: #2E4B31;
+}
+.alert-danger {
+    background-color: var(--rust-tint);
+    border-left-color: var(--rust);
+    color: #6B2A1D;
+}
+.alert-warning {
+    background-color: var(--amber-flag-tint);
+    border-left-color: var(--amber-flag);
+    color: #6B4E14;
+}
+
+/* ---------------------------------------------------------------------
+   9. Modals
+   --------------------------------------------------------------------- */
+.modal-content {
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--line);
+}
+.modal-header.bg-danger {
+    background-color: var(--rust) !important;
+}
+.modal-header.bg-dark {
+    background-color: var(--steel-dark) !important;
+}
+
+/* ---------------------------------------------------------------------
+   10. Dashboard hero (home.html)
+   --------------------------------------------------------------------- */
+.dashboard-hero {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--line-strong);
+}
+.dashboard-hero h1 {
+    margin-bottom: 0.25rem;
+}
+.dashboard-hero .profit-figure {
+    text-align: right;
+}
+.dashboard-hero .profit-figure .value {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 2.1rem;
+    font-weight: 600;
+    color: var(--moss);
+    line-height: 1;
+}
+.dashboard-hero .profit-figure .label {
+    font-size: 0.8rem;
+    color: var(--ink-soft);
+}
+
+@media (max-width: 576px) {
+    .dashboard-hero .profit-figure { text-align: left; }
+}
+
+/* ---------------------------------------------------------------------
+   11. Reduced motion respect
+   --------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        transition-duration: 0.001ms !important;
+        animation-duration: 0.001ms !important;
+    }
 }

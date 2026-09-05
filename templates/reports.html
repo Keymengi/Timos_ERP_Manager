@@ -93,7 +93,7 @@
                         
                         <!-- Omit if completely returned -->
                         {% if effective_qty > 0 %}
-                            <li>{{ effective_qty }}x {{ item.product.name }}</li>
+                            <li>{{ effective_qty | qty }}x {{ item.product.name }}</li>
                         {% endif %}
                     {% endfor %}
                     </ul>
@@ -125,14 +125,14 @@
                                   {% set available_to_return = item.quantity - r_qty %}
                                   
                                   {% if available_to_return > 0 %}
-                                  <option value="{{ item.product_id }}">{{ item.product.name }} (Max: {{ available_to_return }})</option>
+                                  <option value="{{ item.product_id }}">{{ item.product.name }} (Max: {{ available_to_return | qty }})</option>
                                   {% endif %}
                                   {% endfor %}
                               </select>
                           </div>
                           <div class="mb-3">
                               <label class="form-label">Quantity to Return</label>
-                              <input type="number" name="return_qty" class="form-control" min="1" value="1" required>
+                              <input type="number" step="0.01" name="return_qty" class="form-control" min="0.01" value="1" required>
                           </div>
                           <div class="d-grid">
                               <button type="submit" class="btn btn-danger">Confirm Return</button>
@@ -145,5 +145,48 @@
             {% endfor %}
         </tbody>
     </table>
+</div>
+
+<!-- Recent SMS Notifications -->
+<div class="erp-card shadow-sm mt-4">
+    <h5 class="fw-bold mb-3">Recent SMS Notifications</h5>
+    {% if recent_sms %}
+    <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle">
+            <thead>
+                <tr>
+                    <th>Sent At</th>
+                    <th>Recipient</th>
+                    <th>Phone</th>
+                    <th>Category</th>
+                    <th>Message</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in recent_sms %}
+                <tr>
+                    <td>{{ log.date_sent.strftime('%d %b %Y, %I:%M %p') }}</td>
+                    <td>{{ log.recipient_name }}</td>
+                    <td>{{ log.phone_number or 'N/A' }}</td>
+                    <td>{{ log.category }}</td>
+                    <td class="small text-muted">{{ log.message }}</td>
+                    <td>
+                        {% if log.status == 'Sent' %}
+                            <span class="badge bg-success">Sent</span>
+                        {% elif log.status == 'Console' %}
+                            <span class="badge bg-secondary">Console (dev mode)</span>
+                        {% else %}
+                            <span class="badge bg-danger">Failed</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-muted mb-0">No SMS reminders have been sent yet.</p>
+    {% endif %}
 </div>
 {% endblock %}

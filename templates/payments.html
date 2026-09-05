@@ -12,7 +12,7 @@
                 <option value="">-- Choose Account --</option>
                 {% for debt in debts %}
                 <option value="{{ debt.id }}">
-                    {{ debt.customer.name }} | Balance: Ksh{{ debt.balance | currency }}
+                    {{ debt.customer.name }} | Balance: {{ debt.balance | currency }}
                 </option>
                 {% endfor %}
             </select>
@@ -40,6 +40,7 @@
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Amount Paid</th>
+                <th class="text-center">Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -48,7 +49,12 @@
                 <td>#{{ payment.id }}</td>
                 <td>{{ payment.date.strftime('%Y-%m-%d %H:%M') }}</td>
                 <td class="fw-bold">{{ payment.debt.customer.name }}</td>
-                <td class="text-success fw-bold">+Ksh{{ payment.amount | currency }}</td>
+                <td class="text-success fw-bold">+{{ payment.amount | currency }}</td>
+                <td class="text-center">
+                    <form action="/payments/delete/{{ payment.id }}" method="POST" onsubmit="return confirm('Permanently delete this payment record?');" data-offline="true">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
             </tr>
             {% endfor %}
         </tbody>
