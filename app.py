@@ -845,9 +845,9 @@ def reports():
         req_end = request.form.get("end_date")
         
         if req_start:
-            start_date_dt = datetime.strptime(req_start, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=3)))
+            start_date_dt = datetime.strptime(req_start, "%Y-%m-%d")
         if req_end:
-            end_date_dt = datetime.strptime(req_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59, tzinfo=timezone(timedelta(hours=3)))
+            end_date_dt = datetime.strptime(req_end, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
 
     query_debts = Debt.query.filter(Debt.status == "Active")
     if customer_id:
@@ -917,7 +917,7 @@ def bookings():
             charge = 0
 
         # Booking date passed without offset, map to UTC+3
-        booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone(timedelta(hours=3)))
+        booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M")
 
         new_booking = ServiceBooking(
             customer_id=customer_id, service_name=service_name, description=description, 
@@ -946,7 +946,7 @@ def edit_booking(id):
         
     date_str = request.form.get("booking_date")
     if date_str:
-        booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M").replace(tzinfo=timezone(timedelta(hours=3)))
+        booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
         
     db.session.commit()
     flash("Booking details updated successfully.", "success")
@@ -983,7 +983,7 @@ def loans():
         tool_name = request.form.get("tool_name").strip()
         return_date_str = request.form.get("return_date")
 
-        return_date = datetime.strptime(return_date_str, "%Y-%m-%d").replace(tzinfo=timezone(timedelta(hours=3)))
+        return_date = datetime.strptime(return_date_str, "%Y-%m-%d")
         new_loan = ToolLoan(customer_id=customer_id, tool_name=tool_name, return_date=return_date)
         db.session.add(new_loan)
         db.session.commit()
@@ -1046,6 +1046,22 @@ with app.app_context():
                 except Exception:
                     # Already upgraded, or the table/column doesn't exist yet
                     # on a brand-new database — either way, safe to move on.
+                    conn.rollback()
+
+            # Same idea, but for entire columns that are missing (rather than
+            # columns that exist with the wrong type). Postgres supports
+            # "ADD COLUMN IF NOT EXISTS" directly, so this is safe to re-run.
+            missing_columns = [
+                ("debt", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
+                ("service_booking", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
+            ]
+            for table, column, col_definition in missing_columns:
+                try:
+                    conn.execute(db.text(
+                        f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_definition}"
+                    ))
+                    conn.commit()
+                except Exception:
                     conn.rollback()
 
     admin_user = User.query.filter_by(username="admin").first()

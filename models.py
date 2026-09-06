@@ -9,8 +9,17 @@ db = SQLAlchemy()
 # Timezone Helper (EAT / UTC+3)
 # -------------------
 def get_eat_time():
-    """Returns current East Africa Time (UTC+3)"""
-    return datetime.now(timezone(timedelta(hours=3)))
+    """Returns the current East Africa Time (UTC+3) reading, as a plain
+    timestamp with no timezone tag attached.
+
+    Deliberately NOT using a timezone-aware datetime here: when a
+    timezone-aware value is saved to the live Postgres database, Postgres
+    converts it back to plain UTC before storing it — silently undoing the
+    +3 hours we just added. Returning a plain (untagged) reading avoids
+    that conversion, so the East Africa time we calculate is exactly the
+    time that gets saved and displayed.
+    """
+    return datetime.utcnow() + timedelta(hours=3)
 
 # -------------------
 # User Management
