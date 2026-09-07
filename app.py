@@ -31,6 +31,22 @@ else:
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# --- Connection pool resilience ---
+# Render's managed Postgres silently closes connections that sit idle for a
+# while. Without these options, SQLAlchemy keeps handing out those now-dead
+# connections from its pool, which surfaces as cryptic errors like
+# "SSL error: decryption failed or bad record mac" or "SSL SYSCALL error:
+# EOF detected" — exactly what was crashing the reminder scheduler and the
+# /bookings login lookup. pool_pre_ping does a cheap liveness check (and
+# transparently reconnects) before each checkout; pool_recycle proactively
+# retires connections before Render's idle timeout gets to them. SQLite
+# (local dev) doesn't need or support these, so only apply for Postgres.
+if database_url:
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,
+        'pool_recycle': 280,
+    }
+
 db.init_app(app)
 
 # -------------------
@@ -142,10 +158,10 @@ def process_reminders():
                 f"Hi {cust_name}, reminder from Timos: your '{b.service_name}' appointment is "
                 f"scheduled for {when_str}, handled by {TECHNICIAN_NAME}. See you then!"
             )
-            success, status_label = send_sms(phone, customer_message)
+            success, status_label, error_detail = send_sms(phone, customer_message)
             db.session.add(SMSLog(
                 recipient_name=cust_name, phone_number=phone, message=customer_message,
-                category="Booking Reminder", status=status_label, date_sent=get_eat_time()
+                category="Booking Reminder", status=status_label, error_detail=error_detail, date_sent=get_eat_time()
             ))
             print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — SMS {status_label}")
 
@@ -154,10 +170,10 @@ def process_reminders():
                 f"Hi {TECHNICIAN_NAME}, reminder: you have a '{b.service_name}' appointment with "
                 f"{cust_name} scheduled for {when_str}."
             )
-            tech_success, tech_status_label = send_sms(TECHNICIAN_PHONE, tech_message)
+            tech_success, tech_status_label, tech_error_detail = send_sms(TECHNICIAN_PHONE, tech_message)
             db.session.add(SMSLog(
                 recipient_name=TECHNICIAN_NAME, phone_number=TECHNICIAN_PHONE, message=tech_message,
-                category="Technician Reminder", status=tech_status_label, date_sent=get_eat_time()
+                category="Technician Reminder", status=tech_status_label, error_detail=tech_error_detail, date_sent=get_eat_time()
             ))
             print(f"[REMINDER] Technician notified for booking with {cust_name} — SMS {tech_status_label}")
 
@@ -181,11 +197,11 @@ def process_reminders():
                 f"Hi {d.customer_name}, this is a reminder from Timos that you have an outstanding "
                 f"balance of KSh {d.balance:,.2f}. Kindly clear at your earliest convenience. Thank you!"
             )
-            success, status_label = send_sms(phone, message)
+            success, status_label, error_detail = send_sms(phone, message)
 
             db.session.add(SMSLog(
                 recipient_name=d.customer_name, phone_number=phone, message=message,
-                category="Debt Reminder", status=status_label, date_sent=get_eat_time()
+                category="Debt Reminder", status=status_label, error_detail=error_detail, date_sent=get_eat_time()
             ))
 
             print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — SMS {status_label}")
@@ -1107,6 +1123,7 @@ with app.app_context():
             ("service_booking", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
             ("debt", "last_reminder_sent", "TIMESTAMP"),
             ("service_booking", "reminder_lead_hours", "FLOAT DEFAULT 24.0"),
+            ("sms_log", "error_detail", "VARCHAR(255)"),
         ]
         for table, column, col_definition in missing_columns:
             try:
