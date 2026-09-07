@@ -31,6 +31,11 @@
                         <label class="form-label">Booking Date & Time</label>
                         <input type="datetime-local" name="booking_date" class="form-control" required>
                     </div>
+                    <div class="col-md-4 mt-3">
+                        <label class="form-label">Remind me (hours before)</label>
+                        <input type="number" step="0.5" min="0.5" name="reminder_lead_hours" class="form-control" value="24" required>
+                        <small class="text-muted">Customer & Samuel are texted this many hours before the appointment.</small>
+                    </div>
                     <div class="col-md-8 mt-3">
                         <label class="form-label">Description / Notes</label>
                         <input type="text" name="description" class="form-control" placeholder="Optional details...">
@@ -136,6 +141,10 @@
                                      <label class="form-label">Booking Date & Time</label>
                                      <!-- The value must be formatted to yyyy-MM-ddThh:mm -->
                                      <input type="datetime-local" name="booking_date" class="form-control" value="{{ b.booking_date.strftime('%Y-%m-%dT%H:%M') }}">
+                                  </div>
+                                  <div class="mb-3">
+                                     <label class="form-label">Remind me (hours before)</label>
+                                     <input type="number" step="0.5" min="0.5" name="reminder_lead_hours" class="form-control" value="{{ b.reminder_lead_hours }}">
                                   </div>
                                   <div class="mb-3">
                                      <label class="form-label">Description / Notes</label>

@@ -63,7 +63,8 @@ class Debt(db.Model):
     balance = db.Column(db.Float, nullable=False, default=0.0)
     status = db.Column(db.String(20), default="Active")
     date_taken = db.Column(db.DateTime, default=get_eat_time) 
-    reminder_sent = db.Column(db.Boolean, default=False) # For the 24h background reminder
+    reminder_sent = db.Column(db.Boolean, default=False) # No longer used for reminders (kept so nothing breaks); see last_reminder_sent
+    last_reminder_sent = db.Column(db.DateTime, nullable=True) # Powers the repeating 24h debt reminders
     
     customer = db.relationship("Customer", back_populates="debts")
     payments = db.relationship("Payment", back_populates="debt", lazy=True, cascade="all, delete-orphan")
@@ -158,6 +159,7 @@ class ServiceBooking(db.Model):
     charge = db.Column(db.Float, default=0.0) 
     status = db.Column(db.String(20), default="Pending")
     reminder_sent = db.Column(db.Boolean, default=False) # For the booking background reminder
+    reminder_lead_hours = db.Column(db.Float, default=24.0) # How many hours before the appointment to send the reminder
 
     customer = db.relationship("Customer", backref="service_bookings", lazy=True)
 

@@ -102,48 +102,78 @@ def inject_today_profit():
     return dict(today_gross_profit=daily_profit)
 
 # -------------------
+# Technician contact — reminders about upcoming bookings also go to this
+# person, so they know a job is coming up. Change these two lines if the
+# technician ever changes.
+# -------------------
+TECHNICIAN_NAME = "Samuel Githae"
+TECHNICIAN_PHONE = "0721276345"
+
+# -------------------
 # Background Job: Reminders
 # -------------------
 def process_reminders():
-    """Background task checking for booked appointments & 24h overdue debts"""
+    """Background task checking for booked appointments & active debts"""
     with app.app_context():
         now = get_eat_time()
-        
-        # 1. Appointment Reminders (Upcoming in next 24 hrs)
+
+        # 1. Appointment Reminders — each booking has its own custom lead
+        # time (reminder_lead_hours), set individually when it was created,
+        # instead of a fixed 24 hours for every booking. Fires once per
+        # booking, to both the customer and the technician.
         upcoming_bookings = ServiceBooking.query.filter(
             ServiceBooking.booking_date > now,
-            ServiceBooking.booking_date <= now + timedelta(hours=24),
             ServiceBooking.reminder_sent == False,
             ServiceBooking.status.in_(['Pending', 'Confirmed'])
         ).all()
-        
+
         for b in upcoming_bookings:
+            lead_hours = b.reminder_lead_hours if b.reminder_lead_hours is not None else 24
+            if (b.booking_date - now) > timedelta(hours=lead_hours):
+                continue  # Not yet within this booking's own reminder window
+
             cust = b.customer
             cust_name = cust.name if cust else "Customer"
             phone = cust.contact_info if cust else None
+            when_str = b.booking_date.strftime('%d %b %Y, %I:%M %p')
 
-            message = (
+            # -- Customer's reminder --
+            customer_message = (
                 f"Hi {cust_name}, reminder from Timos: your '{b.service_name}' appointment is "
-                f"scheduled for {b.booking_date.strftime('%d %b %Y, %I:%M %p')}. See you then!"
+                f"scheduled for {when_str}, handled by {TECHNICIAN_NAME}. See you then!"
             )
-            success, status_label = send_sms(phone, message)
-
+            success, status_label = send_sms(phone, customer_message)
             db.session.add(SMSLog(
-                recipient_name=cust_name, phone_number=phone, message=message,
+                recipient_name=cust_name, phone_number=phone, message=customer_message,
                 category="Booking Reminder", status=status_label, date_sent=get_eat_time()
             ))
-
             print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — SMS {status_label}")
+
+            # -- Technician's reminder --
+            tech_message = (
+                f"Hi {TECHNICIAN_NAME}, reminder: you have a '{b.service_name}' appointment with "
+                f"{cust_name} scheduled for {when_str}."
+            )
+            tech_success, tech_status_label = send_sms(TECHNICIAN_PHONE, tech_message)
+            db.session.add(SMSLog(
+                recipient_name=TECHNICIAN_NAME, phone_number=TECHNICIAN_PHONE, message=tech_message,
+                category="Technician Reminder", status=tech_status_label, date_sent=get_eat_time()
+            ))
+            print(f"[REMINDER] Technician notified for booking with {cust_name} — SMS {tech_status_label}")
+
             b.reminder_sent = True
 
-        # 2. Debt Reminders (Older than 24 hours)
-        overdue_debts = Debt.query.filter(
-            Debt.date_taken <= now - timedelta(hours=24),
-            Debt.status == 'Active',
-            Debt.reminder_sent == False
-        ).all()
-        
-        for d in overdue_debts:
+        # 2. Debt Reminders — repeats every 24 hours for as long as the debt
+        # stays Active, instead of sending just once. Tracks the last time
+        # each debt was reminded about (last_reminder_sent) rather than a
+        # one-shot yes/no flag.
+        active_debts = Debt.query.filter(Debt.status == 'Active').all()
+
+        for d in active_debts:
+            last_sent = d.last_reminder_sent or d.date_taken
+            if (now - last_sent) < timedelta(hours=24):
+                continue  # Not due for another reminder yet
+
             cust = d.customer
             phone = cust.contact_info if cust else None
 
@@ -159,7 +189,7 @@ def process_reminders():
             ))
 
             print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — SMS {status_label}")
-            d.reminder_sent = True
+            d.last_reminder_sent = now
 
         db.session.commit()
 
@@ -916,12 +946,17 @@ def bookings():
         except ValueError:
             charge = 0
 
+        try:
+            reminder_lead_hours = float(request.form.get("reminder_lead_hours", 24))
+        except ValueError:
+            reminder_lead_hours = 24
+
         # Booking date passed without offset, map to UTC+3
         booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M")
 
         new_booking = ServiceBooking(
             customer_id=customer_id, service_name=service_name, description=description, 
-            booking_date=booking_date, charge=charge
+            booking_date=booking_date, charge=charge, reminder_lead_hours=reminder_lead_hours
         )
         db.session.add(new_booking)
         db.session.commit()
@@ -947,7 +982,12 @@ def edit_booking(id):
     date_str = request.form.get("booking_date")
     if date_str:
         booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
-        
+
+    try:
+        booking.reminder_lead_hours = float(request.form.get("reminder_lead_hours", booking.reminder_lead_hours))
+    except ValueError:
+        pass
+
     db.session.commit()
     flash("Booking details updated successfully.", "success")
     return redirect("/bookings")
@@ -1026,11 +1066,18 @@ with app.app_context():
     # tables that already exist. So on a database that was already running
     # before this update, those columns are quietly upgraded here.
     #
-    # This only applies to the live Postgres database (DATABASE_URL is only
-    # set on Render). It's written so that running it again on an
-    # already-upgraded database does nothing and causes no harm.
-    if database_url:
-        with db.engine.connect() as conn:
+    # This runs against BOTH the live Postgres database and your local
+    # SQLite one — previously it only ran on Postgres, which is why your
+    # local copy kept falling behind and crashing with "no such column"
+    # errors every time a new field was added. Both branches are written
+    # so that running them again on an already-upgraded database does
+    # nothing and causes no harm.
+    is_postgres = bool(database_url)
+
+    with db.engine.connect() as conn:
+        if is_postgres:
+            # Postgres: fix columns that exist but with the old whole-numbers-
+            # only type, now that decimals are allowed (e.g. KSh 44.50).
             column_upgrades = [
                 ("product", "purchase_price"),
                 ("product", "stock"),
@@ -1047,22 +1094,33 @@ with app.app_context():
                     # Already upgraded, or the table/column doesn't exist yet
                     # on a brand-new database — either way, safe to move on.
                     conn.rollback()
+            # (SQLite doesn't need this step: it never enforces a column's
+            # declared type strictly, so it already accepts decimals fine.)
 
-            # Same idea, but for entire columns that are missing (rather than
-            # columns that exist with the wrong type). Postgres supports
-            # "ADD COLUMN IF NOT EXISTS" directly, so this is safe to re-run.
-            missing_columns = [
-                ("debt", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
-                ("service_booking", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
-            ]
-            for table, column, col_definition in missing_columns:
-                try:
+        # Add columns that are missing entirely (rather than existing with
+        # the wrong type) — this is the part that fixes today's crash.
+        # Postgres supports "IF NOT EXISTS" directly; SQLite doesn't, so it
+        # just tries the add and quietly ignores a "column already exists"
+        # error the same way the Postgres branch ignores its own errors.
+        missing_columns = [
+            ("debt", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
+            ("service_booking", "reminder_sent", "BOOLEAN DEFAULT FALSE"),
+            ("debt", "last_reminder_sent", "TIMESTAMP"),
+            ("service_booking", "reminder_lead_hours", "FLOAT DEFAULT 24.0"),
+        ]
+        for table, column, col_definition in missing_columns:
+            try:
+                if is_postgres:
                     conn.execute(db.text(
                         f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {col_definition}"
                     ))
-                    conn.commit()
-                except Exception:
-                    conn.rollback()
+                else:
+                    conn.execute(db.text(
+                        f"ALTER TABLE {table} ADD COLUMN {column} {col_definition}"
+                    ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
 
     admin_user = User.query.filter_by(username="admin").first()
     if not admin_user:

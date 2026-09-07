@@ -231,6 +231,16 @@ textarea:focus-visible {
     background: var(--steel-dark) !important;
     border-left-color: var(--ochre);
 }
+/* The heading color rule further down this file (section 2) applies to
+   every h1-h6 on the page, including the KPI numbers inside these dark
+   cards, quietly overriding Bootstrap's white text and making the figures
+   invisible against the dark background. Force white back on explicitly. */
+.card.text-white,
+.card.text-white .card-title,
+.card.text-white h1, .card.text-white h2, .card.text-white h3,
+.card.text-white h4, .card.text-white h5, .card.text-white h6 {
+    color: #fff !important;
+}
 .card .card-title {
     font-family: var(--font-display);
     font-weight: 600;

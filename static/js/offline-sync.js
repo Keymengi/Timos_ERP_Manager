@@ -58,10 +58,10 @@ async function syncOfflineRequests() {
                 const response = await fetch(item.url, {
                     method: item.method,
                     headers: {
-                        "Content-Type": "application/json",
+                        "Content-Type": "application/x-www-form-urlencoded",
                         "X-Offline-Sync": "true" // Tells Flask this is a background sync
                     },
-                    body: JSON.stringify(item.payload)
+                    body: new URLSearchParams(item.payload).toString()
                 });
 
                 if (response.ok) {
@@ -87,7 +87,15 @@ document.addEventListener("submit", async (e) => {
     // If the user is offline, stop the normal form submission
     if (!navigator.onLine) {
         const form = e.target;
-        
+
+        // Only intercept forms explicitly marked as safe to save-for-later
+        // (adding a sale, debt, booking, etc). Forms that fetch or generate
+        // something new (Reports, CSV import, Login) are deliberately left
+        // alone — queuing those doesn't make sense, since the person needs
+        // that answer right now, not "eventually, whenever they're next
+        // online and happen to be looking at this tab again".
+        if (!form.hasAttribute("data-offline")) return;
+
         // Only intercept POST requests (adding/editing data)
         if (form.method.toUpperCase() !== "POST") return;
 
