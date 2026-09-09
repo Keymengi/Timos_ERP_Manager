@@ -33,7 +33,8 @@
 <!-- Payment History Table -->
 <div class="erp-card shadow-sm">
     <h5 class="mb-3">Recent Payments Log</h5>
-    <table class="table table-hover align-middle">
+    <input type="text" id="paymentsSearchInput" class="form-control mb-3" placeholder="Search by customer...">
+    <table class="table table-hover align-middle" id="paymentsTable">
         <thead class="table-dark">
             <tr>
                 <th>Receipt #</th>
@@ -45,7 +46,7 @@
         </thead>
         <tbody>
             {% for payment in payments %}
-            <tr>
+            <tr data-search="{{ payment.debt.customer.name }}">
                 <td>#{{ payment.id }}</td>
                 <td>{{ payment.date.strftime('%Y-%m-%d %H:%M') }}</td>
                 <td class="fw-bold">{{ payment.debt.customer.name }}</td>
@@ -60,4 +61,5 @@
         </tbody>
     </table>
 </div>
+<script>document.addEventListener('DOMContentLoaded', function () { attachTableSearch('paymentsSearchInput', '#paymentsTable tbody tr[data-search]'); });</script>
 {% endblock %}

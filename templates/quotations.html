@@ -33,7 +33,8 @@
 </div>
 
 <div class="erp-card shadow-sm">
-    <table class="table table-hover align-middle">
+    <input type="text" id="quotationsSearchInput" class="form-control mb-3" placeholder="Search by customer...">
+    <table class="table table-hover align-middle" id="quotationsTable">
         <thead class="table-dark">
             <tr>
                 <th>Quote ID</th>
@@ -45,7 +46,7 @@
         </thead>
         <tbody>
             {% for quote in quotations %}
-            <tr>
+            <tr data-search="{{ quote.customer.name }}">
                 <td>#{{ quote.id }}</td>
                 <td class="fw-bold">{{ quote.customer.name }}</td>
                 <td>Ksh{{ quote.total_amount | currency }}</td>
@@ -56,4 +57,5 @@
         </tbody>
     </table>
 </div>
+<script>document.addEventListener('DOMContentLoaded', function () { attachTableSearch('quotationsSearchInput', '#quotationsTable tbody tr[data-search]'); });</script>
 {% endblock %}

@@ -12,7 +12,7 @@ from sqlalchemy import func
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, Quotation, ServiceBooking, ToolLoan, SMSLog
 from apscheduler.schedulers.background import BackgroundScheduler
-from sms_service import send_sms
+from whatsapp_service import send_whatsapp
 
 app = Flask(__name__)
 
@@ -158,24 +158,26 @@ def process_reminders():
                 f"Hi {cust_name}, reminder from Timos: your '{b.service_name}' appointment is "
                 f"scheduled for {when_str}, handled by {TECHNICIAN_NAME}. See you then!"
             )
-            success, status_label, error_detail = send_sms(phone, customer_message)
+            success, status_label, error_detail = send_whatsapp(phone, customer_message)
             db.session.add(SMSLog(
                 recipient_name=cust_name, phone_number=phone, message=customer_message,
-                category="Booking Reminder", status=status_label, error_detail=error_detail, date_sent=get_eat_time()
+                category="Booking Reminder", channel="WhatsApp", status=status_label,
+                error_detail=error_detail, date_sent=get_eat_time()
             ))
-            print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — SMS {status_label}")
+            print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — WhatsApp {status_label}")
 
             # -- Technician's reminder --
             tech_message = (
                 f"Hi {TECHNICIAN_NAME}, reminder: you have a '{b.service_name}' appointment with "
                 f"{cust_name} scheduled for {when_str}."
             )
-            tech_success, tech_status_label, tech_error_detail = send_sms(TECHNICIAN_PHONE, tech_message)
+            tech_success, tech_status_label, tech_error_detail = send_whatsapp(TECHNICIAN_PHONE, tech_message)
             db.session.add(SMSLog(
                 recipient_name=TECHNICIAN_NAME, phone_number=TECHNICIAN_PHONE, message=tech_message,
-                category="Technician Reminder", status=tech_status_label, error_detail=tech_error_detail, date_sent=get_eat_time()
+                category="Technician Reminder", channel="WhatsApp", status=tech_status_label,
+                error_detail=tech_error_detail, date_sent=get_eat_time()
             ))
-            print(f"[REMINDER] Technician notified for booking with {cust_name} — SMS {tech_status_label}")
+            print(f"[REMINDER] Technician notified for booking with {cust_name} — WhatsApp {tech_status_label}")
 
             b.reminder_sent = True
 
@@ -197,14 +199,15 @@ def process_reminders():
                 f"Hi {d.customer_name}, this is a reminder from Timos that you have an outstanding "
                 f"balance of KSh {d.balance:,.2f}. Kindly clear at your earliest convenience. Thank you!"
             )
-            success, status_label, error_detail = send_sms(phone, message)
+            success, status_label, error_detail = send_whatsapp(phone, message)
 
             db.session.add(SMSLog(
                 recipient_name=d.customer_name, phone_number=phone, message=message,
-                category="Debt Reminder", status=status_label, error_detail=error_detail, date_sent=get_eat_time()
+                category="Debt Reminder", channel="WhatsApp", status=status_label,
+                error_detail=error_detail, date_sent=get_eat_time()
             ))
 
-            print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — SMS {status_label}")
+            print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — WhatsApp {status_label}")
             d.last_reminder_sent = now
 
         db.session.commit()
@@ -1124,6 +1127,11 @@ with app.app_context():
             ("debt", "last_reminder_sent", "TIMESTAMP"),
             ("service_booking", "reminder_lead_hours", "FLOAT DEFAULT 24.0"),
             ("sms_log", "error_detail", "VARCHAR(255)"),
+            # Default 'SMS' here because this column is being added retroactively —
+            # any row that already existed before this update really was sent by SMS.
+            # New rows explicitly pass channel="WhatsApp" when they're inserted, so
+            # this default only ever applies to that historical backfill.
+            ("sms_log", "channel", "VARCHAR(20) DEFAULT 'SMS'"),
         ]
         for table, column, col_definition in missing_columns:
             try:

@@ -42,7 +42,8 @@
 
 <!-- Debts Table -->
 <div class="erp-card shadow-sm">
-    <table class="table table-hover align-middle">
+    <input type="text" id="debtsSearchInput" class="form-control mb-3" placeholder="Search by customer or status...">
+    <table class="table table-hover align-middle" id="debtsTable">
         <thead class="table-dark">
             <tr>
                 <th>ID</th>
@@ -56,7 +57,7 @@
         </thead>
         <tbody>
             {% for debt in debts %}
-            <tr>
+            <tr data-search="{{ debt.customer.name }} {{ debt.status }}">
                 <td>#{{ debt.id }}</td>
                 <td class="fw-bold">{{ debt.customer.name }}</td>
                 <!-- Removed duplicate Ksh string -->
@@ -108,4 +109,5 @@
         </tbody>
     </table>
 </div>
+<script>document.addEventListener('DOMContentLoaded', function () { attachTableSearch('debtsSearchInput', '#debtsTable tbody tr[data-search]'); });</script>
 {% endblock %}

@@ -79,7 +79,8 @@
 <!-- Sales Table -->
 <div class="erp-card shadow-sm">
     <h5 class="mb-3">Recent Transactions</h5>
-    <table class="table table-hover align-middle">
+    <input type="text" id="salesSearchInput" class="form-control mb-3" placeholder="Search by customer or status...">
+    <table class="table table-hover align-middle" id="salesTable">
         <thead class="table-dark">
             <tr>
                 <th>Receipt #</th>
@@ -94,7 +95,7 @@
         </thead>
         <tbody>
             {% for sale in sales %}
-            <tr>
+            <tr data-search="{{ sale.customer.name if sale.customer else 'Walk-in' }} {{ sale.status }} {{ sale.sale_type }}">
                 <td>#{{ sale.id }}</td>
                 <td>{{ sale.date.strftime('%b %d, %H:%M') }}</td>
                 <td class="fw-bold">{{ sale.customer.name if sale.customer else 'Walk-in' }}</td>
@@ -159,6 +160,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', function () {
+    attachTableSearch('salesSearchInput', '#salesTable tbody tr[data-search]');
     const searchInput = document.getElementById('productSearchInput');
     const select = document.getElementById('productSelect');
     const suggestionBox = document.getElementById('productSuggestions');

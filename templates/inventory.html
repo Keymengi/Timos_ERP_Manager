@@ -17,22 +17,15 @@
 <!-- Search Bar and Total Valuation Card -->
 <div class="row mb-4 align-items-center">
     <div class="col-md-8">
-        <!-- GET Search Form: Omitted data-offline="true" -->
-        <form method="GET" action="/inventory" class="d-flex shadow-sm rounded gap-2">
-            <input type="text" name="search" list="productSuggestions" class="form-control border-primary" placeholder="Search products by name..." value="{{ search_query }}" autocomplete="off">
-            <input type="number" name="max_stock" class="form-control" style="max-width: 150px;" placeholder="Max Stock Lvl" value="{{ max_stock }}">
-            
-            <datalist id="productSuggestions">
-                {% for p in all_products %}
-                    <option value="{{ p.name }}">
-                {% endfor %}
-            </datalist>
+        <!-- Filters instantly in the browser as you type — no page reload,
+             so this works exactly the same offline as online. -->
+        <form id="inventoryFilterForm" class="d-flex shadow-sm rounded gap-2" onsubmit="return false;">
+            <input type="text" id="inventorySearchInput" class="form-control border-primary" placeholder="Search products by name..." autocomplete="off">
+            <input type="number" id="inventoryMaxStockInput" class="form-control" style="max-width: 150px;" placeholder="Max Stock Lvl">
 
-            <button type="submit" class="btn btn-primary px-4 fw-bold">Filter</button>
-            {% if search_query or max_stock %}
-                <a href="/inventory" class="btn btn-outline-secondary">Clear</a>
-            {% endif %}
+            <button type="button" id="inventoryClearFilters" class="btn btn-outline-secondary">Clear</button>
         </form>
+        <small id="inventoryFilterCount" class="text-muted"></small>
     </div>
     <div class="col-md-4">
         <div class="erp-card shadow-sm border-start border-4 border-success h-100">
@@ -100,8 +93,8 @@
                 </tr>
             </thead>
             <tbody>
-                {% for p in products %}
-                <tr>
+                {% for p in all_products %}
+                <tr data-product-row data-name="{{ p.name | lower }}" data-stock="{{ p.stock }}">
                     <td>#{{ p.id }}</td>
                     <td class="fw-bold">{{ p.name }}</td>
                     <td>{{ p.purchase_price | currency }}</td>
@@ -201,4 +194,44 @@
     </div>
   </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.getElementById('inventorySearchInput');
+    const maxStockInput = document.getElementById('inventoryMaxStockInput');
+    const clearBtn = document.getElementById('inventoryClearFilters');
+    const countLabel = document.getElementById('inventoryFilterCount');
+    const rows = Array.from(document.querySelectorAll('tr[data-product-row]'));
+
+    function applyFilters() {
+        const nameFilter = searchInput.value.trim().toLowerCase().replace(/\s+/g, '');
+        const maxStockFilter = maxStockInput.value.trim();
+        let visibleCount = 0;
+
+        rows.forEach(function (row) {
+            const name = (row.dataset.name || '').replace(/\s+/g, '');
+            const stock = parseFloat(row.dataset.stock || '0');
+
+            const matchesName = !nameFilter || name.includes(nameFilter);
+            const matchesStock = !maxStockFilter || stock <= parseFloat(maxStockFilter);
+
+            const visible = matchesName && matchesStock;
+            row.style.display = visible ? '' : 'none';
+            if (visible) visibleCount++;
+        });
+
+        countLabel.textContent = (nameFilter || maxStockFilter)
+            ? `Showing ${visibleCount} of ${rows.length} products`
+            : '';
+    }
+
+    searchInput.addEventListener('input', applyFilters);
+    maxStockInput.addEventListener('input', applyFilters);
+    clearBtn.addEventListener('click', function () {
+        searchInput.value = '';
+        maxStockInput.value = '';
+        applyFilters();
+    });
+});
+</script>
 {% endblock %}

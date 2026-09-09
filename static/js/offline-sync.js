@@ -83,37 +83,50 @@ async function syncOfflineRequests() {
 }
 
 // 4. Intercept Form Submissions
+//
+// IMPORTANT: we do NOT trust navigator.onLine to decide this up front --
+// that flag can wrongly report "offline" for a few seconds even on a good
+// connection, which was silently swallowing debt/booking submissions into
+// the offline queue (they'd vanish: never saved server-side, so they never
+// appeared in the table and the reminder scheduler never saw them). Instead
+// we always try the real network request first, and only fall back to the
+// offline queue if that request genuinely fails.
 document.addEventListener("submit", async (e) => {
-    // If the user is offline, stop the normal form submission
-    if (!navigator.onLine) {
-        const form = e.target;
+    const form = e.target;
 
-        // Only intercept forms explicitly marked as safe to save-for-later
-        // (adding a sale, debt, booking, etc). Forms that fetch or generate
-        // something new (Reports, CSV import, Login) are deliberately left
-        // alone — queuing those doesn't make sense, since the person needs
-        // that answer right now, not "eventually, whenever they're next
-        // online and happen to be looking at this tab again".
-        if (!form.hasAttribute("data-offline")) return;
+    // Only intercept forms explicitly marked as safe to save-for-later
+    // (adding a sale, debt, booking, etc). Forms that fetch or generate
+    // something new (Reports, CSV import, Login) are deliberately left
+    // alone -- queuing those doesn't make sense, since the person needs
+    // that answer right now, not "eventually, whenever they're next
+    // online and happen to be looking at this tab again".
+    if (!form.hasAttribute("data-offline")) return;
 
-        // Only intercept POST requests (adding/editing data)
-        if (form.method.toUpperCase() !== "POST") return;
+    // Only intercept POST requests (adding/editing data)
+    if (form.method.toUpperCase() !== "POST") return;
 
-        e.preventDefault(); // Stop page reload
-        
-        // Extract all data from the form
-        const formData = new FormData(form);
-        const data = Object.fromEntries(formData.entries());
-        const url = form.action || window.location.href;
+    e.preventDefault(); // We control submission from here either way
 
-        // Save it locally
+    const formData = new FormData(form);
+    const data = Object.fromEntries(formData.entries());
+    const url = form.action || window.location.href;
+
+    try {
+        const response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams(data).toString()
+        });
+        // Real submission succeeded -- follow the redirect Flask sent back
+        // (mirrors what a normal form POST would do).
+        window.location.href = response.url || url;
+    } catch (networkError) {
+        // Genuine network failure -- safe to queue for later now.
         await saveOfflineRequest(url, "POST", data);
-        
-        // Notify the user
+
         alert("You are offline. Your entry has been saved and will sync automatically when you reconnect.");
         form.reset();
-        
-        // Optional: If you use Bootstrap modals for forms, hide them automatically
+
         const openModal = document.querySelector('.modal.show');
         if (openModal && typeof bootstrap !== 'undefined') {
             const modalInstance = bootstrap.Modal.getInstance(openModal);

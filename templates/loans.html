@@ -37,7 +37,8 @@
     <div class="card shadow-sm">
         <div class="card-header bg-secondary text-white">Active & Past Loans</div>
         <div class="card-body">
-            <table class="table table-striped">
+            <input type="text" id="loansSearchInput" class="form-control mb-3" placeholder="Search by customer, tool, or status...">
+            <table class="table table-striped" id="loansTable">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -51,7 +52,7 @@
                 </thead>
                 <tbody>
                     {% for l in loans %}
-                    <tr>
+                    <tr data-search="{{ l.customer.name }} {{ l.tool_name }} {{ l.status }}">
                         <td>{{ l.id }}</td>
                         <td>{{ l.customer.name }}</td>
                         <td>{{ l.tool_name }}</td>
@@ -84,4 +85,5 @@
         </div>
     </div>
 </div>
+<script>document.addEventListener('DOMContentLoaded', function () { attachTableSearch('loansSearchInput', '#loansTable tbody tr[data-search]'); });</script>
 {% endblock %}

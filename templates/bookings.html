@@ -50,7 +50,8 @@
     <div class="card shadow-sm">
         <div class="card-header bg-secondary text-white">All Bookings</div>
         <div class="card-body">
-            <table class="table table-striped align-middle">
+            <input type="text" id="bookingsSearchInput" class="form-control mb-3" placeholder="Search by customer, service, or status...">
+            <table class="table table-striped align-middle" id="bookingsTable">
                 <thead>
                     <tr>
                         <th>ID</th>
@@ -65,7 +66,7 @@
                 </thead>
                 <tbody>
                     {% for b in bookings %}
-                    <tr>
+                    <tr data-search="{{ b.customer.name }} {{ b.service_name }} {{ b.status }}">
                         <td>{{ b.id }}</td>
                         <td>{{ b.customer.name }}</td>
                         <td>{{ b.service_name }}</td>
@@ -168,4 +169,5 @@
         </div>
     </div>
 </div>
+<script>document.addEventListener('DOMContentLoaded', function () { attachTableSearch('bookingsSearchInput', '#bookingsTable tbody tr[data-search]'); });</script>
 {% endblock %}
