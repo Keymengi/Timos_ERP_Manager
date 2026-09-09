@@ -512,21 +512,16 @@ def inventory():
 
         return redirect("/inventory")
 
-    search_query = request.args.get("search", "").strip()
-    max_stock = request.args.get("max_stock", "")
-    
-    query = Product.query
-    if search_query:
-        sq_no_space = search_query.replace(" ", "")
-        query = query.filter(func.replace(Product.name, ' ', '').ilike(f"%{sq_no_space}%"))
-    if max_stock.isdigit():
-        query = query.filter(Product.stock <= int(max_stock))
-
-    products = query.all()
-    all_products = Product.query.all()
+    # Search, stock-status filtering and sorting all now happen client-side
+    # in the browser (see the <script> block in inventory.html) so the
+    # inventory page keeps working — search bar, sort, everything — even
+    # with no internet connection. This route just hands over every
+    # product, once, and the JS on the page slices/reorders it from there.
+    products = Product.query.order_by(Product.name.asc()).all()
+    all_products = products
     total_valuation = sum(p.purchase_price * p.stock for p in all_products)
 
-    return render_template("inventory.html", products=products, all_products=all_products, search_query=search_query, max_stock=max_stock, total_valuation=total_valuation)
+    return render_template("inventory.html", products=products, all_products=all_products, total_valuation=total_valuation)
 
 @app.route("/inventory/edit/<int:id>", methods=["POST"])
 @login_required
