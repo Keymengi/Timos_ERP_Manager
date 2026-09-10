@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <!-- Icon font used by buttons throughout the app (was missing before, so icons were invisible) -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
     <meta name="theme-color" content="#1C2E38">
 </head>
@@ -33,6 +34,7 @@
                     <li class="nav-item"><a class="nav-link" href="/bookings">Bookings</a></li>
                     <li class="nav-item"><a class="nav-link" href="/loans">Tool Loans</a></li>
                     <li class="nav-item"><a class="nav-link" href="/reports">Reports</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/analytics">Analytics</a></li>
                 </ul>
                 <div class="d-flex align-items-center ms-lg-3">
                     <span class="navbar-text me-3 text-light small">Logged in as: <strong>{{ current_user.username }}</strong></span>

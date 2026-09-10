@@ -1,14 +1,61 @@
-const CACHE_NAME = 'erp-cache-v3'; // Bumped to v3 to force everyone's browser to drop the old cache
+const CACHE_NAME = 'erp-cache-v4'; // Bumped to v4: added more pages/assets to the precache list below
 const STATIC_ASSETS = [
+    // Page shells — cached on install so each module still opens offline
+    // even before the user has visited it once. (The fetch handler below
+    // also caches every page as it's actually visited, so this list just
+    // covers the "never been online on this device yet" case.)
     '/',
+    '/customers',
+    '/sales',
+    '/debts',
+    '/payments',
+    '/inventory',
+    '/quotations',
+    '/bookings',
+    '/loans',
+    '/reports',
+    '/analytics',
+
+    // Static assets — CSS, JS, fonts, manifest, favicon
+    '/static/css/bootstrap.min.css',
+    '/static/css/style.css',
+    '/static/js/bootstrap.bundle.min.js',
+    '/static/js/table-search.js',
     '/static/js/offline-sync.js',
+    '/static/manifest.json',
+    '/static/favicon.svg',
+    '/static/fonts/ibm-plex-mono-400.woff2',
+    '/static/fonts/ibm-plex-mono-500.woff2',
+    '/static/fonts/ibm-plex-mono-600.woff2',
+    '/static/fonts/ibm-plex-sans-400.woff2',
+    '/static/fonts/ibm-plex-sans-500.woff2',
+    '/static/fonts/ibm-plex-sans-600.woff2',
+    '/static/fonts/zilla-slab-500.woff2',
+    '/static/fonts/zilla-slab-600.woff2',
+    '/static/fonts/zilla-slab-700.woff2',
 ];
 
 // 1. Install & Cache Static Assets
+//
+// Uses individual cache.add() calls instead of cache.addAll() so that one
+// failing request doesn't abort the whole precache. This matters here
+// because several of the page shells above (e.g. /reports, /analytics) are
+// Admin-only — a Staff account, or anyone not logged in yet, would get a
+// redirect/403 for those specific URLs, and addAll() would have thrown on
+// that single failure and left EVERYTHING (including the plain static
+// files) uncached. Promise.allSettled lets every request succeed or fail
+// independently; whatever succeeds gets cached, and failures are just
+// logged.
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
-            return cache.addAll(STATIC_ASSETS);
+            return Promise.allSettled(
+                STATIC_ASSETS.map((url) =>
+                    cache.add(url).catch((err) => {
+                        console.warn('[SW] Skipped precaching', url, err);
+                    })
+                )
+            );
         })
     );
     self.skipWaiting();

@@ -147,9 +147,9 @@
     </table>
 </div>
 
-<!-- Recent WhatsApp Notifications -->
+<!-- Recent SMS Notifications -->
 <div class="erp-card shadow-sm mt-4">
-    <h5 class="fw-bold mb-3">Recent WhatsApp Notifications</h5>
+    <h5 class="fw-bold mb-3">Recent SMS Notifications</h5>
     {% if recent_sms %}
     <div class="table-responsive">
         <table class="table table-sm table-hover align-middle">
@@ -171,7 +171,7 @@
                     <td>{{ log.recipient_name }}</td>
                     <td>{{ log.phone_number or 'N/A' }}</td>
                     <td>{{ log.category }}</td>
-                    <td>{{ log.channel or 'WhatsApp' }}</td>
+                    <td>{{ log.channel or 'SMS' }}</td>
                     <td class="small text-muted">{{ log.message }}</td>
                     <td>
                         {% if log.status == 'Sent' %}
@@ -191,7 +191,7 @@
         </table>
     </div>
     {% else %}
-    <p class="text-muted mb-0">No WhatsApp reminders have been sent yet.</p>
+    <p class="text-muted mb-0">No SMS reminders have been sent yet.</p>
     {% endif %}
 </div>
 {% endblock %}

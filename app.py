@@ -2,6 +2,7 @@ import re
 import csv
 import os
 import io
+import secrets
 import atexit
 from functools import wraps
 from flask import Response
@@ -10,18 +11,42 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from flask_migrate import Migrate
 from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, Quotation, ServiceBooking, ToolLoan, SMSLog
 from apscheduler.schedulers.background import BackgroundScheduler
-from whatsapp_service import send_whatsapp
+from mobitech_service import send_sms
 
 app = Flask(__name__)
 
 # -------------------
 # Configuration
 # -------------------
-app.config['SECRET_KEY'] = 'timos_secret_key_change_in_production'
-
 database_url = os.environ.get('DATABASE_URL')
+
+# --- SECRET_KEY: loaded strictly from the environment, never hardcoded ---
+# database_url being set is our signal that this is the live/production
+# deployment (Render, with a real Postgres instance attached) rather than
+# a local dev run against SQLite. In that case a missing SECRET_KEY is a
+# hard error — starting up with no key (or a guessable one) would let
+# anyone forge session cookies. Locally, we fall back to a random key
+# generated fresh each run, so dev keeps working without extra setup;
+# the only cost is that logging in again is needed after every restart,
+# since sessions signed with the old random key stop validating.
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    if database_url:
+        raise RuntimeError(
+            "SECRET_KEY environment variable is not set. Set it in your Render "
+            "environment variables before deploying — do not fall back to a "
+            "hardcoded value in code."
+        )
+    app.config['SECRET_KEY'] = secrets.token_hex(32)
+    print(
+        "[WARNING] SECRET_KEY not set — using a random development-only key. "
+        "Sessions will not persist across restarts. Set SECRET_KEY in your "
+        "environment for a stable key (required in production)."
+    )
+
 if database_url:
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -48,6 +73,18 @@ if database_url:
     }
 
 db.init_app(app)
+
+# -------------------
+# Flask-Migrate
+# -------------------
+# Lets future schema changes be applied with `flask db migrate` / `flask db
+# upgrade` instead of editing the database by hand or (worse) deleting and
+# recreating it. See MIGRATIONS.md for the one-time setup and day-to-day
+# commands. This coexists with the ad-hoc column-upgrade block near the
+# bottom of this file, which stays in place so existing deployments that
+# predate Flask-Migrate keep working — new schema changes going forward
+# should go through a migration instead of being added to that block.
+migrate = Migrate(app, db)
 
 # -------------------
 # Flask-Login & RBAC Setup
@@ -93,6 +130,47 @@ def qty_format(value):
 # (which aren't run through Jinja filters).
 def fmt_qty(value):
     return qty_format(value)
+
+# --- CSV Export Helper ---
+# Centralizes CSV generation for every "Export CSV" button on the Analytics
+# page. Two things this fixes versus building CSV rows with manual
+# f-string/comma joins (as the old inventory-only export did):
+#
+#   1. Correctness: a customer or product name containing a comma, quote,
+#      or newline would silently corrupt a hand-built CSV row. Python's
+#      csv module quotes/escapes fields properly so the file always opens
+#      cleanly in Excel/Sheets.
+#   2. CSV formula injection: a cell value that starts with =, +, - or @
+#      is interpreted as a formula by Excel/Sheets when the file is
+#      opened, which is a known way to smuggle in a malicious formula via
+#      user-entered data (e.g. a customer name typed as "=cmd|...").
+#      _safe_cell prefixes such values with a leading apostrophe so
+#      spreadsheet apps display them as plain text instead of executing
+#      them.
+def _safe_cell(value):
+    text = "" if value is None else str(value)
+    if text and text[0] in ("=", "+", "-", "@"):
+        return "'" + text
+    return text
+
+def make_csv_response(filename, header, rows):
+    """
+    header: list of column names.
+    rows: iterable of iterables (one per row), same length as header.
+    Returns a Flask Response with the right CSV headers, ready to `return`
+    directly from a route.
+    """
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    for row in rows:
+        writer.writerow([_safe_cell(v) for v in row])
+
+    return Response(
+        buffer.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename={filename}'}
+    )
 
 # --- Real-Time Gross Profit Injector ---
 @app.context_processor
@@ -158,26 +236,26 @@ def process_reminders():
                 f"Hi {cust_name}, reminder from Timos: your '{b.service_name}' appointment is "
                 f"scheduled for {when_str}, handled by {TECHNICIAN_NAME}. See you then!"
             )
-            success, status_label, error_detail = send_whatsapp(phone, customer_message)
+            success, status_label, error_detail = send_sms(phone, customer_message)
             db.session.add(SMSLog(
                 recipient_name=cust_name, phone_number=phone, message=customer_message,
-                category="Booking Reminder", channel="WhatsApp", status=status_label,
+                category="Booking Reminder", channel="SMS", status=status_label,
                 error_detail=error_detail, date_sent=get_eat_time()
             ))
-            print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — WhatsApp {status_label}")
+            print(f"[REMINDER] Upcoming Service Booking: {cust_name} at {b.booking_date.strftime('%Y-%m-%d %H:%M')} — SMS {status_label}")
 
             # -- Technician's reminder --
             tech_message = (
                 f"Hi {TECHNICIAN_NAME}, reminder: you have a '{b.service_name}' appointment with "
                 f"{cust_name} scheduled for {when_str}."
             )
-            tech_success, tech_status_label, tech_error_detail = send_whatsapp(TECHNICIAN_PHONE, tech_message)
+            tech_success, tech_status_label, tech_error_detail = send_sms(TECHNICIAN_PHONE, tech_message)
             db.session.add(SMSLog(
                 recipient_name=TECHNICIAN_NAME, phone_number=TECHNICIAN_PHONE, message=tech_message,
-                category="Technician Reminder", channel="WhatsApp", status=tech_status_label,
+                category="Technician Reminder", channel="SMS", status=tech_status_label,
                 error_detail=tech_error_detail, date_sent=get_eat_time()
             ))
-            print(f"[REMINDER] Technician notified for booking with {cust_name} — WhatsApp {tech_status_label}")
+            print(f"[REMINDER] Technician notified for booking with {cust_name} — SMS {tech_status_label}")
 
             b.reminder_sent = True
 
@@ -199,15 +277,15 @@ def process_reminders():
                 f"Hi {d.customer_name}, this is a reminder from Timos that you have an outstanding "
                 f"balance of KSh {d.balance:,.2f}. Kindly clear at your earliest convenience. Thank you!"
             )
-            success, status_label, error_detail = send_whatsapp(phone, message)
+            success, status_label, error_detail = send_sms(phone, message)
 
             db.session.add(SMSLog(
                 recipient_name=d.customer_name, phone_number=phone, message=message,
-                category="Debt Reminder", channel="WhatsApp", status=status_label,
+                category="Debt Reminder", channel="SMS", status=status_label,
                 error_detail=error_detail, date_sent=get_eat_time()
             ))
 
-            print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — WhatsApp {status_label}")
+            print(f"[REMINDER] Overdue Debt: Ksh {d.balance} owed by {d.customer_name} requires follow-up — SMS {status_label}")
             d.last_reminder_sent = now
 
         db.session.commit()
@@ -931,17 +1009,123 @@ def reports():
         recent_sms=recent_sms
     )
 
+@app.route("/analytics")
+@login_required
+@admin_required
+def analytics():
+    return render_template("analytics.html")
+
 @app.route("/export/inventory")
 @login_required
 @admin_required
 def export_inventory():
-    products = Product.query.all()
-    def generate():
-        yield 'ID,Product Name,Purchase Price,Minimum S.P,Selling Price,Stock\n'
-        for p in products:
-            yield f'{p.id},{p.name},{p.purchase_price},{p.min_selling_price},{p.selling_price},{p.stock}\n'
-            
-    return Response(generate(), mimetype='text/csv', headers={'Content-Disposition': 'attachment; filename=inventory_report.csv'})
+    products = Product.query.order_by(Product.name.asc()).all()
+    header = ["ID", "Product Name", "Purchase Price", "Minimum S.P", "Selling Price", "Stock"]
+    rows = (
+        [p.id, p.name, p.purchase_price, p.min_selling_price, p.selling_price, p.stock]
+        for p in products
+    )
+    return make_csv_response("inventory_report.csv", header, rows)
+
+@app.route("/export/customers")
+@login_required
+@admin_required
+def export_customers():
+    customers = Customer.query.order_by(Customer.name.asc()).all()
+    header = ["ID", "Name", "Contact Info"]
+    rows = ([c.pid, c.name, c.contact_info] for c in customers)
+    return make_csv_response("customers_report.csv", header, rows)
+
+@app.route("/export/sales")
+@login_required
+@admin_required
+def export_sales():
+    sales = Sale.query.order_by(Sale.date.desc()).all()
+    header = ["Sale ID", "Date", "Customer", "Items", "Total Amount", "Sale Type", "Status"]
+
+    def generate_rows():
+        for s in sales:
+            items_str = "; ".join(
+                f"{fmt_qty(item.quantity)}x {item.product.name}" for item in s.items
+            )
+            yield [
+                s.id, s.date.strftime('%Y-%m-%d %H:%M'),
+                s.customer.name if s.customer else "Walk-in",
+                items_str, s.total_amount, s.sale_type, s.status
+            ]
+
+    return make_csv_response("sales_report.csv", header, generate_rows())
+
+@app.route("/export/debts")
+@login_required
+@admin_required
+def export_debts():
+    debts = Debt.query.order_by(Debt.date_taken.desc()).all()
+    header = ["ID", "Customer", "Amount", "Balance", "Status", "Date Taken"]
+    rows = (
+        [d.id, d.customer_name, d.amount, d.balance, d.status, d.date_taken.strftime('%Y-%m-%d %H:%M')]
+        for d in debts
+    )
+    return make_csv_response("debts_report.csv", header, rows)
+
+@app.route("/export/payments")
+@login_required
+@admin_required
+def export_payments():
+    payments = Payment.query.order_by(Payment.date.desc()).all()
+    header = ["ID", "Customer", "Amount", "Date"]
+    rows = (
+        [p.id, p.debt.customer_name if p.debt else "N/A", p.amount, p.date.strftime('%Y-%m-%d %H:%M')]
+        for p in payments
+    )
+    return make_csv_response("payments_report.csv", header, rows)
+
+@app.route("/export/quotations")
+@login_required
+@admin_required
+def export_quotations():
+    quotations = Quotation.query.order_by(Quotation.date.desc()).all()
+    header = ["ID", "Customer", "Date", "Valid Until", "Total Amount"]
+    rows = (
+        [
+            q.id, q.customer.name if q.customer else "N/A",
+            q.date.strftime('%Y-%m-%d %H:%M') if q.date else "",
+            q.valid_until.strftime('%Y-%m-%d %H:%M') if q.valid_until else "",
+            q.total_amount
+        ]
+        for q in quotations
+    )
+    return make_csv_response("quotations_report.csv", header, rows)
+
+@app.route("/export/bookings")
+@login_required
+@admin_required
+def export_bookings():
+    all_bookings = ServiceBooking.query.order_by(ServiceBooking.booking_date.desc()).all()
+    header = ["ID", "Customer", "Service", "Description", "Booking Date", "Charge", "Status"]
+    rows = (
+        [
+            b.id, b.customer.name if b.customer else "N/A", b.service_name,
+            b.description or "", b.booking_date.strftime('%Y-%m-%d %H:%M'), b.charge, b.status
+        ]
+        for b in all_bookings
+    )
+    return make_csv_response("bookings_report.csv", header, rows)
+
+@app.route("/export/loans")
+@login_required
+@admin_required
+def export_loans():
+    all_loans = ToolLoan.query.order_by(ToolLoan.date_borrowed.desc()).all()
+    header = ["ID", "Customer", "Tool Name", "Date Borrowed", "Return Date", "Status"]
+    rows = (
+        [
+            l.id, l.customer.name if l.customer else "N/A", l.tool_name,
+            l.date_borrowed.strftime('%Y-%m-%d %H:%M'), l.return_date.strftime('%Y-%m-%d'), l.status
+        ]
+        for l in all_loans
+    )
+    return make_csv_response("tool_loans_report.csv", header, rows)
 
 
 # 8. SERVICE BOOKINGS
@@ -1124,8 +1308,9 @@ with app.app_context():
             ("sms_log", "error_detail", "VARCHAR(255)"),
             # Default 'SMS' here because this column is being added retroactively —
             # any row that already existed before this update really was sent by SMS.
-            # New rows explicitly pass channel="WhatsApp" when they're inserted, so
-            # this default only ever applies to that historical backfill.
+            # New rows explicitly pass channel="SMS" when they're inserted (see
+            # mobitech_service.py), so this default only ever applies to that
+            # historical backfill.
             ("sms_log", "channel", "VARCHAR(20) DEFAULT 'SMS'"),
         ]
         for table, column, col_definition in missing_columns:
@@ -1142,19 +1327,43 @@ with app.app_context():
             except Exception:
                 conn.rollback()
 
-    admin_user = User.query.filter_by(username="admin").first()
-    if not admin_user:
-        admin_user = User(username="admin", role="Admin")
-        db.session.add(admin_user)
-    admin_user.set_password(os.environ.get("ADMIN_PASSWORD", "pass364"))
+    # --- Default account creation ---
+    # IMPORTANT CHANGE: previously this block called set_password() on
+    # EVERY startup, using a hardcoded fallback ("pass364"/"staff123") if
+    # ADMIN_PASSWORD/STAFF_PASSWORD wasn't set. That meant any password you
+    # changed through the app got silently overwritten back to the weak
+    # hardcoded default the next time the app restarted or redeployed.
+    # Now, the password is only ever set here when the account doesn't
+    # exist yet (first run). After that, changing it is up to you (there's
+    # no in-app "change password" screen yet — update it directly via the
+    # database, or add such a screen, if you need to rotate it).
+    def _create_default_user(username, role, env_var_name):
+        existing = User.query.filter_by(username=username).first()
+        if existing:
+            return
+        password = os.environ.get(env_var_name)
+        if not password:
+            password = secrets.token_urlsafe(12)
+            print(
+                f"[SECURITY] {env_var_name} is not set. Generated a one-time "
+                f"password for the '{username}' account: {password}\n"
+                f"           Log in and note it down now, then set {env_var_name} "
+                f"in your environment so this doesn't happen again on the next restart."
+            )
+        new_user = User(username=username, role=role)
+        new_user.set_password(password)
+        db.session.add(new_user)
 
-    staff_user = User.query.filter_by(username="staff").first()
-    if not staff_user:
-        staff_user = User(username="staff", role="Staff")
-        db.session.add(staff_user)
-    staff_user.set_password(os.environ.get("STAFF_PASSWORD", "staff123"))
-        
+    _create_default_user("admin", "Admin", "ADMIN_PASSWORD")
+    _create_default_user("staff", "Staff", "STAFF_PASSWORD")
+
     db.session.commit()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Debug mode (Werkzeug's interactive debugger) must never run in
+    # production — it allows arbitrary code execution from the browser if
+    # the app is ever exposed. It's now opt-in via FLASK_DEBUG=1, and off
+    # by default. Render runs this app via gunicorn (see Procfile), which
+    # never hits this block at all — this only matters for local `python
+    # app.py` runs.
+    app.run(debug=os.environ.get("FLASK_DEBUG") == "1")

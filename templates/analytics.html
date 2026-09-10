@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="dashboard-hero">
+    <div>
+        <h1>Analytics & Exports</h1>
+        <p class="text-muted mb-0">Download any module's current data as a CSV file for offline analysis, backup, or import into Excel/Sheets.</p>
+    </div>
+</div>
+
+<div class="row g-4 pb-5">
+    <!-- Customers -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-users me-2 text-muted"></i>Customers</h5>
+                    <p class="card-text text-muted small">Every customer's name and contact info.</p>
+                </div>
+                <a href="/export/customers" class="btn btn-outline-primary mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sales -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-cash-register me-2 text-muted"></i>Sales</h5>
+                    <p class="card-text text-muted small">Every sale, with items, totals, type, and status.</p>
+                </div>
+                <a href="/export/sales" class="btn btn-primary mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debts -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-file-invoice-dollar me-2 text-muted"></i>Debts</h5>
+                    <p class="card-text text-muted small">All debt records with amount, balance, and status.</p>
+                </div>
+                <a href="/export/debts" class="btn btn-danger mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Payments -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-money-bill-wave me-2 text-muted"></i>Payments</h5>
+                    <p class="card-text text-muted small">Every payment logged against a debt.</p>
+                </div>
+                <a href="/export/payments" class="btn btn-info text-white mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-boxes-stacked me-2 text-muted"></i>Inventory</h5>
+                    <p class="card-text text-muted small">Every product with pricing and current stock.</p>
+                </div>
+                <a href="/export/inventory" class="btn btn-success mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quotations -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-file-signature me-2 text-muted"></i>Quotations</h5>
+                    <p class="card-text text-muted small">Every quotation issued, with validity and amount.</p>
+                </div>
+                <a href="/export/quotations" class="btn btn-secondary mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bookings -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-calendar-check me-2 text-muted"></i>Bookings</h5>
+                    <p class="card-text text-muted small">Every service booking, past and upcoming.</p>
+                </div>
+                <a href="/export/bookings" class="btn btn-warning text-dark mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tool Loans -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark"><i class="fa-solid fa-toolbox me-2 text-muted"></i>Tool Loans</h5>
+                    <p class="card-text text-muted small">Every tool loan with borrow/return dates and status.</p>
+                </div>
+                <a href="/export/loans" class="btn btn-dark mt-3 w-100">Export CSV</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
