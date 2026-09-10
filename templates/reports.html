@@ -149,7 +149,17 @@
 
 <!-- Recent SMS Notifications -->
 <div class="erp-card shadow-sm mt-4">
-    <h5 class="fw-bold mb-3">Recent SMS Notifications</h5>
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3">
+        <h5 class="fw-bold mb-0">Recent SMS Notifications</h5>
+
+        <!-- Send Test SMS: lets you confirm the Mobitech integration is
+             working (or check console-mode output in your server logs)
+             without waiting for a real debt/booking reminder to fire. -->
+        <form method="POST" action="/sms/test" class="d-flex gap-2 flex-wrap">
+            <input type="tel" name="test_phone" class="form-control form-control-sm" placeholder="e.g. 0712345678" style="width: 180px;" required>
+            <button type="submit" class="btn btn-sm btn-outline-dark">Send Test SMS</button>
+        </form>
+    </div>
     {% if recent_sms %}
     <div class="table-responsive">
         <table class="table table-sm table-hover align-middle">

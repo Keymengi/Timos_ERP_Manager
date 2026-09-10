@@ -34,22 +34,25 @@ SETUP:
        MOBITECH_SERVICE_ID=0            # optional, defaults to "0"
 
 DEV-SAFE BY DEFAULT:
-If MOBITECH_API_KEY or MOBITECH_SENDER_NAME isn't set, this module runs in
-"console mode": messages are printed to the terminal instead of actually
-sent. Nothing crashes just because you haven't finished SMS setup yet.
+If MOBITECH_API_KEY isn't set, this module runs in "console mode": messages 
+are printed to the terminal instead of actually sent. If MOBITECH_SENDER_NAME 
+is left blank, it defaults to Mobitech's shared gateway.
 """
 
 import os
 import re
 import logging
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("timos_sms")
 if not logger.handlers:
     logging.basicConfig(level=logging.INFO)
 
 MOBITECH_API_KEY = os.environ.get("MOBITECH_API_KEY")
-MOBITECH_SENDER_NAME = os.environ.get("MOBITECH_SENDER_NAME")
+MOBITECH_SENDER_NAME = os.environ.get("MOBITECH_SENDER_NAME", "")
 MOBITECH_SERVICE_ID = os.environ.get("MOBITECH_SERVICE_ID", "0")
 
 SEND_URL = "https://api.mobitechtechnologies.com/sms/sendsms"
@@ -57,14 +60,14 @@ SEND_URL = "https://api.mobitechtechnologies.com/sms/sendsms"
 # Mobitech's own "it worked" status code (see response codes table in their docs).
 SUCCESS_STATUS_CODE = "1000"
 
-LIVE_MODE = bool(MOBITECH_API_KEY and MOBITECH_SENDER_NAME)
+LIVE_MODE = bool(MOBITECH_API_KEY)
 
 if LIVE_MODE:
-    logger.info("SMS service initialized in LIVE mode (Mobitech, sender=%s)", MOBITECH_SENDER_NAME)
+    logger.info("SMS service initialized in LIVE mode (Mobitech, sender=%s)", MOBITECH_SENDER_NAME or "Default Gateway")
 else:
     logger.info(
-        "SMS service running in CONSOLE mode (MOBITECH_API_KEY/MOBITECH_SENDER_NAME "
-        "not fully set). Messages will be printed to the console instead of sent."
+        "SMS service running in CONSOLE mode (MOBITECH_API_KEY not set). "
+        "Messages will be printed to the console instead of sent."
     )
 
 

@@ -1009,6 +1009,38 @@ def reports():
         recent_sms=recent_sms
     )
 
+@app.route("/sms/test", methods=["POST"])
+@login_required
+@admin_required
+def send_test_sms():
+    """Sends a one-off SMS to a phone number typed in on the Reports page,
+    so you can confirm the Mobitech integration is wired up correctly
+    (live send, or console-mode print if MOBITECH_API_KEY/MOBITECH_SENDER_NAME
+    aren't set yet) without waiting for a real debt/booking reminder to fire."""
+    phone = request.form.get("test_phone", "").strip()
+    if not phone:
+        flash("Error: Enter a phone number to send the test SMS to.", "danger")
+        return redirect("/reports")
+
+    message = f"Timos ERP test message, sent by {current_user.username} to confirm SMS is working."
+    success, status_label, error_detail = send_sms(phone, message)
+
+    db.session.add(SMSLog(
+        recipient_name=f"Test ({current_user.username})", phone_number=phone, message=message,
+        category="Test", channel="SMS", status=status_label,
+        error_detail=error_detail, date_sent=get_eat_time()
+    ))
+    db.session.commit()
+
+    if status_label == "Sent":
+        flash(f"Test SMS sent to {phone}.", "success")
+    elif status_label == "Console":
+        flash(f"MOBITECH_API_KEY/MOBITECH_SENDER_NAME not set — test message for {phone} was printed to the server console instead of sent.", "warning")
+    else:
+        flash(f"Test SMS to {phone} failed: {error_detail or 'unknown error'}", "danger")
+
+    return redirect("/reports")
+
 @app.route("/analytics")
 @login_required
 @admin_required

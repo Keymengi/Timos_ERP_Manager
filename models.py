@@ -172,7 +172,7 @@ class SMSLog(db.Model):
     recipient_name = db.Column(db.String(120), nullable=True)
     phone_number = db.Column(db.String(20), nullable=True)
     message = db.Column(db.Text, nullable=False)
-    category = db.Column(db.String(30), nullable=False)  # 'Debt Reminder' or 'Booking Reminder'
+    category = db.Column(db.String(30), nullable=False)  # 'Debt Reminder', 'Booking Reminder', 'Technician Reminder', or 'Test'
     channel = db.Column(db.String(20), default="SMS")  # 'SMS' (was 'WhatsApp' on older rows)
     status = db.Column(db.String(20), default="Sent")  # 'Sent', 'Failed', 'Console'
     error_detail = db.Column(db.String(255), nullable=True)  # why a 'Failed' send failed
