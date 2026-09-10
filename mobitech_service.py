@@ -55,7 +55,7 @@ MOBITECH_API_KEY = os.environ.get("MOBITECH_API_KEY")
 MOBITECH_SENDER_NAME = os.environ.get("MOBITECH_SENDER_NAME", "")
 MOBITECH_SERVICE_ID = os.environ.get("MOBITECH_SERVICE_ID", "0")
 
-SEND_URL = "https://api.mobitechtechnologies.com/sms/sendsms"
+SEND_URL = "https://textapi.mobitechtechnologies.com/sms/sendsms"
 
 # Mobitech's own "it worked" status code (see response codes table in their docs).
 SUCCESS_STATUS_CODE = "1000"
