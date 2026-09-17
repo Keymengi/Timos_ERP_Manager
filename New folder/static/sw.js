@@ -1,4 +1,4 @@
-const CACHE_NAME = 'erp-cache-v5'; // Bumped to v5: removed the deleted /quotations page from the precache list
+const CACHE_NAME = 'erp-cache-v4'; // Bumped to v4: added more pages/assets to the precache list below
 const STATIC_ASSETS = [
     // Page shells — cached on install so each module still opens offline
     // even before the user has visited it once. (The fetch handler below
@@ -10,6 +10,7 @@ const STATIC_ASSETS = [
     '/debts',
     '/payments',
     '/inventory',
+    '/quotations',
     '/bookings',
     '/loans',
     '/reports',

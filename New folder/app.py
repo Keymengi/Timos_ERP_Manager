@@ -6,13 +6,13 @@ import secrets
 import atexit
 from functools import wraps
 from flask import Response
-from flask import Flask, render_template, request, redirect, flash, url_for, jsonify, session
+from flask import Flask, render_template, request, redirect, flash, url_for, jsonify
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func, text
+from sqlalchemy import func
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
-from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, ServiceBooking, ToolLoan, SMSLog
+from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, Quotation, ServiceBooking, ToolLoan, SMSLog
 from apscheduler.schedulers.background import BackgroundScheduler
 from mobitech_service import send_sms
 
@@ -106,40 +106,6 @@ def admin_required(f):
             return redirect(url_for('home'))
         return f(*args, **kwargs)
     return decorated_function
-
-# --- Offline-Sync JSON Response Wrapper ---
-# offline-sync.js replays queued requests with an "X-Offline-Sync: true"
-# header. Every route in this app still does its normal flash()+redirect()
-# on both success and validation failure -- nothing about that changes.
-# This hook runs after any such route returns and, ONLY for requests
-# carrying that header, converts the outgoing flash message + redirect
-# into a real JSON body ({status: "success"|"error", message: "..."})
-# instead. That's what lets offline-sync.js tell an accepted write apart
-# from a rejected one -- previously both looked identical (a followed
-# redirect landing on a 200 page), so a rejected offline sale was being
-# silently deleted from the queue and reported to the user as a success.
-# Normal browser requests (no header) are completely unaffected.
-@app.after_request
-def offline_sync_response(response):
-    if request.headers.get("X-Offline-Sync") != "true":
-        return response
-
-    flashed = session.get('_flashes', [])
-    session.pop('_flashes', None)  # don't let it leak into the next real page view
-
-    if flashed:
-        is_error = any(category == "danger" for category, _message in flashed)
-        combined_message = " ".join(message for _category, message in flashed)
-        return jsonify({
-            "status": "error" if is_error else "success",
-            "message": combined_message
-        }), 200
-
-    if response.status_code in (301, 302, 303, 307, 308):
-        # A redirect with no flash message at all -- treat as a plain success.
-        return jsonify({"status": "success", "message": "Saved."}), 200
-
-    return response
 
 # --- Currency Filter ---
 @app.template_filter('currency')
@@ -324,40 +290,9 @@ def process_reminders():
 
         db.session.commit()
 
-# --- Reminder job: guarded against double-firing across multiple worker
-# processes (e.g. if this is ever deployed with more than one gunicorn
-# worker, or more than one running instance) using a Postgres advisory
-# lock -- a lock that lives in the database itself rather than in any one
-# process, so whichever worker happens to grab it first for a given
-# minute runs the job, and every other worker's attempt that same minute
-# just skips instead of also sending out the same batch of SMS reminders.
-# SQLite (local dev) has no advisory locks and only ever runs a single
-# process anyway, so it skips the locking and just runs the job directly.
-REMINDER_JOB_LOCK_KEY = 918273645  # any fixed integer, unique to this lock
-
-def process_reminders_locked():
-    if not database_url:
-        process_reminders()
-        return
-
-    with app.app_context():
-        conn = db.engine.connect()
-        got_lock = False
-        try:
-            got_lock = conn.execute(
-                text("SELECT pg_try_advisory_lock(:key)"), {"key": REMINDER_JOB_LOCK_KEY}
-            ).scalar()
-            if not got_lock:
-                return  # another worker already has this minute's run
-            process_reminders()
-        finally:
-            if got_lock:
-                conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": REMINDER_JOB_LOCK_KEY})
-            conn.close()
-
 # Init Scheduler
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=process_reminders_locked, trigger="interval", minutes=1)
+scheduler.add_job(func=process_reminders, trigger="interval", minutes=1)
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
@@ -411,8 +346,8 @@ def customers():
         name = data.get("name", "").strip()
         contact_info = data.get("contact_info", "").strip()
 
-        if not re.match(r"^[A-Za-z\s'-]+$", name):
-            flash("Error: Customer name must contain only letters, spaces, hyphens, or apostrophes.", "danger")
+        if not re.match(r"^[A-Za-z\s]+$", name):
+            flash("Error: Customer name must contain only letters and spaces.", "danger")
             return redirect("/customers")
             
         if len(contact_info) < 10:
@@ -449,8 +384,8 @@ def edit_customer(pid):
     name = data.get("name", "").strip()
     contact_info = data.get("contact_info", "").strip()
 
-    if not re.match(r"^[A-Za-z\s'-]+$", name):
-        flash("Error: Customer name must contain only letters, spaces, hyphens, or apostrophes.", "danger")
+    if not re.match(r"^[A-Za-z\s]+$", name):
+        flash("Error: Customer name must contain only letters and spaces.", "danger")
         return redirect("/customers")
 
     customer.name = name
@@ -621,15 +556,11 @@ def inventory():
             flash("Error: Invalid numeric input.", "danger")
             return redirect("/inventory")
 
-        if purchase_price <= 0 or selling_price <= 0:
-            flash("Error: Purchase price and selling price must both be greater than zero.", "danger")
-            return redirect("/inventory")
-
         if added_stock <= 0:
             flash("Error: Restock quantity must be greater than zero.", "danger")
             return redirect("/inventory")
 
-        min_sp = purchase_price * 0.5  # Fix: was purchase_price * 1.5 (i.e. purchase_price + purchase_price*0.5)
+        min_sp = purchase_price + purchase_price * 0.5
         # Note: selling price is no longer required to be above min_sp.
         # min_sp is still calculated and stored (so it keeps showing
         # correctly on the Inventory page) — it just doesn't block saving.
@@ -679,22 +610,14 @@ def edit_inventory(id):
     
     product.name = data.get("name", product.name).strip().title()
     try:
-        new_purchase_price = float(data.get("purchase_price", product.purchase_price))
-        new_selling_price = float(data.get("selling_price", product.selling_price))
-        new_stock = float(data.get("stock", product.stock))
+        product.purchase_price = float(data.get("purchase_price", product.purchase_price))
+        product.selling_price = float(data.get("selling_price", product.selling_price))
+        product.stock = float(data.get("stock", product.stock))
     except ValueError:
-        flash("Error: Invalid numeric input.", "danger")
-        return redirect("/inventory")
-
-    if new_purchase_price <= 0 or new_selling_price <= 0:
-        flash("Error: Purchase price and selling price must both be greater than zero.", "danger")
-        return redirect("/inventory")
-
-    product.purchase_price = new_purchase_price
-    product.selling_price = new_selling_price
-    product.stock = new_stock
-    product.min_selling_price = product.purchase_price * 0.5  # Fix: was purchase_price * 1.5
-
+        pass
+        
+    product.min_selling_price = product.purchase_price + (product.purchase_price * 0.5)
+    
     try:
         db.session.commit()
         flash("Product updated securely.", "success")
@@ -766,11 +689,7 @@ def import_inventory():
             skipped_rows.append(f"Row {row_num} ('{raw_name}'): one of the numbers isn't valid")
             continue
 
-        if purchase_price <= 0 or selling_price <= 0:
-            skipped_rows.append(f"Row {row_num} ('{raw_name}'): purchase/selling price must be greater than zero")
-            continue
-
-        min_sp = purchase_price * 0.5  # Fix: was purchase_price * 1.5
+        min_sp = purchase_price + purchase_price * 0.5
         # Note: unlike the manual "add product" form, imported rows are NOT
         # rejected for having a selling price below min_sp. The minimum is
         # still calculated and stored on the product (so it still shows
@@ -902,12 +821,7 @@ def sales():
             try:
                 unit_price = float(custom_price_str)
             except ValueError:
-                flash("Error: Custom price must be a valid number.", "danger")
-                return redirect("/sales")
-
-            if unit_price <= 0:
-                flash("Error: Custom price must be greater than zero.", "danger")
-                return redirect("/sales")
+                unit_price = product.selling_price
         else:
             unit_price = product.selling_price
 
@@ -1013,7 +927,32 @@ def delete_sale(sale_id):
     return redirect(request.referrer or "/sales")
 
 
-# 6. REPORTS
+# 6. QUOTATIONS
+@app.route("/quotations", methods=["GET", "POST"])
+@login_required
+@admin_required
+def quotations():
+    if request.method == "POST":
+        customer_id = request.form.get("customer_id")
+        amount = float(request.form.get("amount", 0))
+        valid_days = int(request.form.get("valid_days", 7))
+        
+        if amount <= 0:
+            flash("Error: Amount must be greater than zero.", "danger")
+            return redirect("/quotations")
+            
+        valid_until = get_eat_time() + timedelta(days=valid_days)
+        new_quote = Quotation(customer_id=customer_id, total_amount=amount, date=get_eat_time(), valid_until=valid_until)
+        db.session.add(new_quote)
+        db.session.commit()
+        flash("Quotation saved successfully!", "success")
+        return redirect("/quotations")
+
+    customers = Customer.query.all()
+    quotations = Quotation.query.all()
+    return render_template("quotations.html", customers=customers, quotations=quotations)
+
+# 7. REPORTS
 @app.route("/reports", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -1173,6 +1112,23 @@ def export_payments():
     )
     return make_csv_response("payments_report.csv", header, rows)
 
+@app.route("/export/quotations")
+@login_required
+@admin_required
+def export_quotations():
+    quotations = Quotation.query.order_by(Quotation.date.desc()).all()
+    header = ["ID", "Customer", "Date", "Valid Until", "Total Amount"]
+    rows = (
+        [
+            q.id, q.customer.name if q.customer else "N/A",
+            q.date.strftime('%Y-%m-%d %H:%M') if q.date else "",
+            q.valid_until.strftime('%Y-%m-%d %H:%M') if q.valid_until else "",
+            q.total_amount
+        ]
+        for q in quotations
+    )
+    return make_csv_response("quotations_report.csv", header, rows)
+
 @app.route("/export/bookings")
 @login_required
 @admin_required
@@ -1204,7 +1160,7 @@ def export_loans():
     return make_csv_response("tool_loans_report.csv", header, rows)
 
 
-# 7. SERVICE BOOKINGS
+# 8. SERVICE BOOKINGS
 @app.route("/bookings", methods=["GET", "POST"])
 @login_required
 @admin_required
@@ -1228,10 +1184,6 @@ def bookings():
         # Booking date passed without offset, map to UTC+3
         booking_date = datetime.strptime(booking_date_str, "%Y-%m-%dT%H:%M")
 
-        if booking_date < get_eat_time():
-            flash("Error: Booking date/time cannot be in the past.", "danger")
-            return redirect("/bookings")
-
         new_booking = ServiceBooking(
             customer_id=customer_id, service_name=service_name, description=description, 
             booking_date=booking_date, charge=charge, reminder_lead_hours=reminder_lead_hours
@@ -1243,8 +1195,7 @@ def bookings():
 
     customers = Customer.query.all()
     all_bookings = ServiceBooking.query.order_by(ServiceBooking.booking_date.desc()).all()
-    now_str = get_eat_time().strftime("%Y-%m-%dT%H:%M")
-    return render_template("bookings.html", customers=customers, bookings=all_bookings, now=now_str)
+    return render_template("bookings.html", customers=customers, bookings=all_bookings)
 
 @app.route("/bookings/edit/<int:id>", methods=["POST"])
 @login_required
@@ -1260,11 +1211,7 @@ def edit_booking(id):
         
     date_str = request.form.get("booking_date")
     if date_str:
-        new_booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
-        if new_booking_date < get_eat_time():
-            flash("Error: Booking date/time cannot be in the past.", "danger")
-            return redirect("/bookings")
-        booking.booking_date = new_booking_date
+        booking.booking_date = datetime.strptime(date_str, "%Y-%m-%dT%H:%M")
 
     try:
         booking.reminder_lead_hours = float(request.form.get("reminder_lead_hours", booking.reminder_lead_hours))
@@ -1297,7 +1244,7 @@ def cancel_booking(booking_id):
     return redirect("/bookings")
 
 
-# 8. TOOL LOANS
+# 9. TOOL LOANS
 @app.route("/loans", methods=["GET", "POST"])
 @login_required
 def loans():

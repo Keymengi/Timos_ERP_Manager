@@ -48,6 +48,7 @@ class Customer(db.Model):
 
     debts = db.relationship("Debt", back_populates="customer", lazy=True, cascade="all, delete-orphan")
     sales = db.relationship("Sale", back_populates="customer", lazy=True, cascade="all, delete-orphan")
+    quotations = db.relationship("Quotation", back_populates="customer", lazy=True, cascade="all, delete-orphan")
 
 # -------------------
 # Debt Tracking
@@ -131,6 +132,19 @@ class ReturnItem(db.Model):
 
     sale = db.relationship("Sale", back_populates="returns")
     product = db.relationship("Product")
+
+# -------------------
+# Quotations
+# -------------------
+class Quotation(db.Model):
+    __tablename__ = "quotation"
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customer.pid"), nullable=True)
+    date = db.Column(db.DateTime, default=get_eat_time)
+    valid_until = db.Column(db.DateTime)
+    total_amount = db.Column(db.Float, default=0.0)
+
+    customer = db.relationship("Customer", back_populates="quotations")
 
 # -------------------
 # Appointments & Service Bookings

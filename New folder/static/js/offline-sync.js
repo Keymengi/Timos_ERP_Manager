@@ -52,7 +52,6 @@ async function syncOfflineRequests() {
 
         console.log(`Attempting to sync ${items.length} offline actions...`);
         let syncedCount = 0;
-        const failedMessages = [];
 
         for (const item of items) {
             try {
@@ -65,57 +64,19 @@ async function syncOfflineRequests() {
                     body: new URLSearchParams(item.payload).toString()
                 });
 
-                if (!response.ok) {
-                    // A real server error (5xx) or an unexpected 4xx -- leave
-                    // this item queued and try again on the next sync.
-                    console.error(`Sync failed for item ${item.id}: HTTP ${response.status}`);
-                    continue;
-                }
-
-                // Flask now responds to X-Offline-Sync requests with real JSON
-                // ({status: "success"|"error", message: "..."}) instead of a
-                // redirect, specifically so we can tell a genuine success
-                // apart from a request the server understood but rejected
-                // (e.g. "only 2 left in stock"). response.ok alone used to be
-                // true in BOTH cases, since fetch() silently follows Flask's
-                // redirect-on-error to a normal 200 page -- that's why a
-                // rejected offline sale used to just vanish, reported to the
-                // person as a success along with everything else.
-                let result = null;
-                try {
-                    result = await response.json();
-                } catch (parseError) {
-                    result = null; // unexpected non-JSON response
-                }
-
-                const deleteTx = db.transaction(storeName, "readwrite");
-                deleteTx.objectStore(storeName).delete(item.id);
-
-                if (result && result.status === "error") {
-                    // The server received it and rejected it. Retrying the
-                    // exact same data would just fail again forever, so it's
-                    // removed from the queue -- but unlike before, the person
-                    // is actually told why, instead of it silently vanishing.
-                    failedMessages.push(result.message || "One saved entry could not be synced.");
-                } else {
+                if (response.ok) {
+                    // If Flask accepts it, delete it from the local database
+                    const deleteTx = db.transaction(storeName, "readwrite");
+                    deleteTx.objectStore(storeName).delete(item.id);
                     syncedCount++;
                 }
             } catch (error) {
-                // Genuine network failure -- leave it queued, server might
-                // still be unreachable.
                 console.error("Failed to sync item. Server might still be unreachable.", error);
             }
         }
-
-        if (syncedCount > 0 || failedMessages.length > 0) {
-            let summary = "";
-            if (syncedCount > 0) {
-                summary += `${syncedCount} offline action(s) synced successfully.\n`;
-            }
-            if (failedMessages.length > 0) {
-                summary += `${failedMessages.length} entr${failedMessages.length === 1 ? "y" : "ies"} could not be saved:\n- ${failedMessages.join("\n- ")}`;
-            }
-            alert(summary.trim());
+        
+        if (syncedCount > 0) {
+            alert(`${syncedCount} offline actions have been successfully synced to the server!`);
             window.location.reload(); // Refresh to show updated data (like new inventory or customers)
         }
     };

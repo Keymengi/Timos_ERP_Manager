@@ -29,7 +29,7 @@
                      </div>
                     <div class="col-md-4 mt-3">
                         <label class="form-label">Booking Date & Time</label>
-                        <input type="datetime-local" name="booking_date" class="form-control" min="{{ now }}" required>
+                        <input type="datetime-local" name="booking_date" class="form-control" required>
                     </div>
                     <div class="col-md-4 mt-3">
                         <label class="form-label">Remind me (hours before)</label>
@@ -141,7 +141,7 @@
                                   <div class="mb-3">
                                      <label class="form-label">Booking Date & Time</label>
                                      <!-- The value must be formatted to yyyy-MM-ddThh:mm -->
-                                     <input type="datetime-local" name="booking_date" class="form-control" min="{{ now }}" value="{{ b.booking_date.strftime('%Y-%m-%dT%H:%M') }}">
+                                     <input type="datetime-local" name="booking_date" class="form-control" value="{{ b.booking_date.strftime('%Y-%m-%dT%H:%M') }}">
                                   </div>
                                   <div class="mb-3">
                                      <label class="form-label">Remind me (hours before)</label>

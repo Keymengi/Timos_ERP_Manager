@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Page Header with Import and Export Buttons -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">Inventory Management</h2>
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-outline-danger fw-bold shadow-sm" onclick="exportOutOfStockCSV()">
+            <i class="fas fa-box-open me-1"></i> Export Out of Stock
+        </button>
+        <button type="button" class="btn btn-outline-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#importModal">
+            <i class="fas fa-file-import me-1"></i> Import CSV File
+        </button>
+        <a href="/export/inventory" class="btn btn-outline-secondary fw-bold shadow-sm">
+            <i class="fas fa-file-export me-1"></i> Export CSV
+        </a>
+    </div>
+</div>
+
+<!-- Search / Sort / Filter Bar and Total Valuation Card -->
+<!--
+    Everything in this bar runs entirely in the browser (see the <script>
+    block at the bottom of this page) instead of submitting to the server.
+    That's deliberate: this page loads with every product already in the
+    table, so searching, filtering by stock status, and sorting just
+    reorder/hide the rows that are already on the page. None of it needs a
+    network request, so it all keeps working with no internet connection —
+    only "Import CSV File" and the two Export buttons (which produce a
+    file for you to download) need you to be online. Actually — the new
+    "Export Out of Stock" button doesn't either; see its script below.
+-->
+<div class="row mb-4 align-items-center">
+    <div class="col-md-8">
+        <div class="d-flex shadow-sm rounded gap-2 flex-wrap">
+            <input type="text" id="inventorySearch" list="productSuggestions" class="form-control border-primary" placeholder="Search products by name..." autocomplete="off" style="min-width: 180px; flex: 2;">
+
+            <datalist id="productSuggestions">
+                {% for p in all_products %}
+                    <option value="{{ p.name }}">
+                {% endfor %}
+            </datalist>
+
+            <select id="stockFilter" class="form-select" style="max-width: 170px;">
+                <option value="all">All Stock Levels</option>
+                <option value="in">In Stock</option>
+                <option value="low">Low Stock (&lt;10)</option>
+                <option value="out">Out of Stock</option>
+            </select>
+
+            <select id="sortBy" class="form-select" style="max-width: 190px;">
+                <option value="name-asc">Sort: Name (A–Z)</option>
+                <option value="name-desc">Sort: Name (Z–A)</option>
+                <option value="stock-asc">Sort: Stock (Low–High)</option>
+                <option value="stock-desc">Sort: Stock (High–Low)</option>
+                <option value="purchase-asc">Sort: Purchase Price</option>
+                <option value="selling-asc">Sort: Selling Price</option>
+            </select>
+
+            <button type="button" id="clearFilters" class="btn btn-outline-secondary">Clear</button>
+        </div>
+        <div class="small text-muted mt-2" id="resultsCount"></div>
+    </div>
+    <div class="col-md-4">
+        <div class="erp-card shadow-sm border-start border-4 border-success h-100">
+            <div class="card-body py-2">
+                <p class="mb-0 text-muted small text-uppercase fw-bold">Total Inventory Value</p>
+                <h4 class="mb-0 fw-bold text-success">{{ total_valuation | currency }}</h4>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Product Card -->
+<div class="erp-card shadow-sm mb-4 border-success">
+    <div class="card-body">
+        <h5 class="mb-3">Add / Restock Product</h5>
+        <!-- ADDED data-offline="true" -->
+        <form method="POST" action="/inventory" class="row g-3 align-items-end" data-offline="true">
+            <div class="col-md-3">
+                <label class="form-label">Product Name</label>
+                <input type="text" name="name" list="existingProducts" class="form-control" placeholder="e.g, Tronic Bulb 9W" autocomplete="off" required>
+                <datalist id="existingProducts">
+                    {% for p in all_products %}
+                    <option value="{{ p.name }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Purchase Price</label>
+                <div class="input-group">
+                    <span class="input-group-text">KSh</span>
+                    <input type="number" step="0.01" name="purchase_price" class="form-control" required>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Selling Price</label>
+                <div class="input-group">
+                    <span class="input-group-text">KSh</span>
+                    <input type="number" step="0.01" name="selling_price" class="form-control" required>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Added Stock</label>
+                <input type="number" step="0.01" name="stock" class="form-control" min="0" required>
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-success w-100 fw-bold">+</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Inventory Table -->
+<div class="erp-card shadow-sm" id="inventoryTableCard">
+    <div class="card-body p-0">
+        <table class="table table-hover align-middle mb-0">
+            <thead class="table-dark">
+                <tr>
+                    <th>ID</th>
+                    <th>Product Name</th>
+                    <th>Purchase Price</th>
+                    <th>Minimum S.P</th>
+                    <th>Selling Price</th>
+                    <th>Current Stock</th>
+                    <th class="text-center">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="inventoryTableBody">
+                {% for p in products %}
+                <tr data-id="{{ p.id }}" data-name="{{ p.name | lower }}" data-stock="{{ p.stock }}" data-purchase="{{ p.purchase_price }}" data-selling="{{ p.selling_price }}">
+                    <td>#{{ p.id }}</td>
+                    <td class="fw-bold">{{ p.name }}</td>
+                    <td>{{ p.purchase_price | currency }}</td>
+                    <td class="text-warning fw-bold">{{ p.min_selling_price | currency }}</td>
+                    <td>{{ p.selling_price | currency }}</td>
+                    <td>
+                        {% if p.stock == 0 %}
+                            <span class="badge bg-danger fs-6 px-3">Out of Stock</span>
+                        {% elif p.stock < 10 %}
+                            <span class="badge bg-warning text-dark fs-6 px-3">{{ p.stock | qty }} (Low)</span>
+                        {% else %}
+                            <span class="badge bg-success fs-6 px-3">{{ p.stock | qty }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-secondary me-1" data-bs-toggle="modal" data-bs-target="#editModal{{ p.id }}">Edit</button>
+                        <!-- ADDED data-offline="true" -->
+                        <form action="/inventory/delete/{{ p.id }}" method="POST" class="d-inline" onsubmit="return confirm('Are you sure you want to completely delete this product record?');" data-offline="true">
+                            <button type="submit" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> Delete</button>
+                        </form>
+                    </td>
+                </tr>
+
+                <!-- Edit Inventory Modal -->
+                <div class="modal fade" id="editModal{{ p.id }}" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog">
+                    <div class="modal-content">
+                      <!-- ADDED data-offline="true" -->
+                      <form method="POST" action="/inventory/edit/{{ p.id }}" data-offline="true">
+                          <div class="modal-header bg-light">
+                            <h5 class="modal-title">Edit Product: {{ p.name }}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                          </div>
+                          <div class="modal-body">
+                              <div class="mb-3">
+                                 <label class="form-label">Product Name</label>
+                                 <input type="text" name="name" class="form-control" value="{{ p.name }}" required>
+                              </div>
+                              <div class="mb-3">
+                                 <label class="form-label">Purchase Price</label>
+                                 <input type="number" step="0.01" name="purchase_price" class="form-control" value="{{ p.purchase_price }}" required>
+                              </div>
+                              <div class="mb-3">
+                                 <label class="form-label">Selling Price</label>
+                                 <input type="number" step="0.01" name="selling_price" class="form-control" value="{{ p.selling_price }}" required>
+                              </div>
+                              <div class="mb-3">
+                                 <label class="form-label">Total Stock</label>
+                                 <input type="number" step="0.01" name="stock" class="form-control" value="{{ p.stock }}" required>
+                              </div>
+                          </div>
+                          <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-success">Save Changes</button>
+                          </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-center py-4 text-muted">
+                        No products in inventory yet.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Shown by JS in place of the table body when a search/filter combination matches nothing -->
+<div id="noResultsRow" class="text-center py-4 text-muted d-none">No products found matching your search/filter.</div>
+
+<!-- Import MS Access Modal -->
+<div class="modal fade" id="importModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <!-- File Upload Form: Omitted data-offline="true" -->
+      <form method="POST" action="/inventory/import" enctype="multipart/form-data">
+          <div class="modal-header bg-primary text-white">
+            <h5 class="modal-title"><i class="fas fa-file-import me-2"></i>Import Inventory Data</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+              <div class="mb-3">
+                 <label class="form-label fw-bold">Select Inventory CSV File (.csv)</label>
+                 <input type="file" name="file" class="form-control" accept=".csv" required>
+                 <div class="form-text mt-2">
+                     Supports structured `.csv` files.
+                 </div>
+              </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary fw-bold">Upload & Sync</button>
+          </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.getElementById('inventorySearch');
+    const stockFilter = document.getElementById('stockFilter');
+    const sortBy = document.getElementById('sortBy');
+    const clearBtn = document.getElementById('clearFilters');
+    const resultsCount = document.getElementById('resultsCount');
+    const tbody = document.getElementById('inventoryTableBody');
+    const tableCard = document.getElementById('inventoryTableCard');
+    const noResultsRow = document.getElementById('noResultsRow');
+
+    // All product rows the server sent down on page load. Every
+    // search/filter/sort action below just re-slices and re-orders THIS
+    // array and re-appends the same DOM nodes — it never asks the server
+    // for anything, so it all keeps working with no internet connection.
+    const allRows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+    const totalCount = allRows.length;
+
+    function stockStatus(stock) {
+        if (stock === 0) return 'out';
+        if (stock < 10) return 'low';
+        return 'in';
+    }
+
+    function applyFiltersAndSort() {
+        const search = searchInput.value.trim().toLowerCase();
+        const statusFilter = stockFilter.value;
+        const [field, direction] = sortBy.value.split('-');
+
+        let visibleRows = allRows.filter(function (row) {
+            const name = row.dataset.name;
+            const stock = parseFloat(row.dataset.stock);
+            if (search && !name.includes(search)) return false;
+            if (statusFilter !== 'all' && stockStatus(stock) !== statusFilter) return false;
+            return true;
+        });
+
+        visibleRows.sort(function (a, b) {
+            if (field === 'name') {
+                return direction === 'asc'
+                    ? a.dataset.name.localeCompare(b.dataset.name)
+                    : b.dataset.name.localeCompare(a.dataset.name);
+            }
+            const key = field === 'stock' ? 'stock' : (field === 'purchase' ? 'purchase' : 'selling');
+            const valA = parseFloat(a.dataset[key]);
+            const valB = parseFloat(b.dataset[key]);
+            return direction === 'desc' ? valB - valA : valA - valB;
+        });
+
+        // Hide every row, then show + re-append only the ones that survived
+        // the filter, in their new sorted order.
+        allRows.forEach(function (row) { row.style.display = 'none'; });
+        visibleRows.forEach(function (row) {
+            row.style.display = '';
+            tbody.appendChild(row);
+        });
+
+        // Only swap in the "no results" message for an empty SEARCH/FILTER
+        // result. If there were never any products to begin with, leave the
+        // table showing its own "No products in inventory yet." row instead
+        // — that's a different situation from "your filter matched nothing".
+        if (visibleRows.length === 0 && totalCount > 0) {
+            tableCard.classList.add('d-none');
+            noResultsRow.classList.remove('d-none');
+        } else {
+            tableCard.classList.remove('d-none');
+            noResultsRow.classList.add('d-none');
+        }
+
+        resultsCount.textContent = `Showing ${visibleRows.length} of ${totalCount} products`;
+    }
+
+    searchInput.addEventListener('input', applyFiltersAndSort);
+    stockFilter.addEventListener('change', applyFiltersAndSort);
+    sortBy.addEventListener('change', applyFiltersAndSort);
+    clearBtn.addEventListener('click', function () {
+        searchInput.value = '';
+        stockFilter.value = 'all';
+        sortBy.value = 'name-asc';
+        applyFiltersAndSort();
+    });
+
+    applyFiltersAndSort();
+
+    // ---- Export Out of Stock ----
+    // Reads straight from the rows already on the page (not a server
+    // request), so this works offline too — the only "network" step is
+    // your browser saving the file to disk, which doesn't need internet.
+    window.exportOutOfStockCSV = function () {
+        const outOfStock = allRows.filter(function (row) {
+            return parseFloat(row.dataset.stock) === 0;
+        });
+
+        if (outOfStock.length === 0) {
+            alert('Nothing to export — no products are currently out of stock.');
+            return;
+        }
+
+        const header = ['Product ID', 'Product Name', 'Purchase Price (KSh)', 'Selling Price (KSh)', 'Current Stock'];
+        const lines = [header.join(',')];
+
+        outOfStock.forEach(function (row) {
+            const displayName = row.cells[1].textContent.trim().replace(/"/g, '""');
+            lines.push([
+                row.dataset.id,
+                `"${displayName}"`,
+                row.dataset.purchase,
+                row.dataset.selling,
+                '0'
+            ].join(','));
+        });
+
+        const csvContent = lines.join('\r\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const today = new Date().toISOString().slice(0, 10);
+
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `out_of_stock_inventory_${today}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+});
+</script>
+{% endblock %}

@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Real-time Daily Gross Profit Banner -->
+<div class="erp-card shadow-sm mb-4 border-success p-3 bg-light d-flex justify-content-between align-items-center">
+    <div>
+        <h6 class="text-success fw-bold mb-0">Today's Gross Profit</h6>
+        <small class="text-muted">Auto-resets daily, increments on sales and decrements on returns</small>
+    </div>
+    <h4 class="text-success fw-bold mb-0 money">{{ today_gross_profit | currency }}</h4>
+</div>
+
+<h2 class="mb-4 fw-bold">Sales terminal</h2>
+
+<!-- Sale Form Card -->
+<div class="erp-card shadow-sm mb-4 border-primary">
+    <form method="POST" action="/sales" class="row g-3" data-offline="true">
+        
+        <!-- Customer Selection Area -->
+        <div class="col-md-3">
+            <label class="form-label text-primary">Customer (Leave blank for Walk-in)</label>
+            <select name="customer_id" class="form-select mb-2">
+                <option value="">-- Walk-in (No Name) --</option>
+                {% for customer in customers %}
+                <option value="{{ customer.pid }}">{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="new_customer_name" class="form-control form-control-sm" placeholder="Or quick-add new customer...">
+        </div>
+
+        <!-- Product, Search, Quantity & Custom Price Area -->
+        <div class="col-md-6">
+            <label class="form-label">Item(s) Sold</label>
+            <!-- Product Search Input with live suggestions -->
+            <div class="position-relative mb-2">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text">Search</span>
+                    <input type="text" id="productSearchInput" class="form-control" placeholder="Type to filter products..." autocomplete="off">
+                </div>
+                <div id="productSuggestions" class="list-group position-absolute w-100 shadow-sm" style="z-index: 1000; max-height: 240px; overflow-y: auto; display: none;"></div>
+            </div>
+            <select name="product_id" id="productSelect" class="form-select mb-2" required>
+                <option value="">-- Select Product --</option>
+                {% for product in products %}
+                <option value="{{ product.id }}">
+                    {{ product.name }} | Price: {{ product.selling_price | currency }} | Stock: {{ product.stock | qty }}
+                </option>
+                {% endfor %}
+            </select>
+            
+            <div class="row g-2">
+                <div class="col-6">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">Quantity</span>
+                        <input type="number" step="0.01" name="quantity" class="form-control" min="0.01" value="1" required>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">Custom Price</span>
+                        <input type="number" step="0.01" name="custom_price" class="form-control" placeholder="Optional discount price">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sale Type & Submit Area -->
+        <div class="col-md-3 border-start ps-3">
+            <label class="form-label">Sale Type</label>
+            <select name="sale_type" class="form-select mb-3 border-secondary">
+                <option value="Normal">Normal (Paid)</option>
+                <option value="Debt">Debt (Credit)</option>
+            </select>
+            <button type="submit" class="btn btn-primary w-100 fw-bold py-2">Record Sale</button>
+        </div>
+    </form>
+</div>
+
+<!-- Sales Table -->
+<div class="erp-card shadow-sm">
+    <h5 class="mb-3">Recent Transactions</h5>
+    <input type="text" id="salesSearchInput" class="form-control mb-3" placeholder="Search by customer or status...">
+    <table class="table table-hover align-middle" id="salesTable">
+        <thead class="table-dark">
+            <tr>
+                <th>Receipt #</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Item(s) Sold</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Actions</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for sale in sales %}
+            <tr data-search="{{ sale.customer.name if sale.customer else 'Walk-in' }} {{ sale.status }} {{ sale.sale_type }}">
+                <td>#{{ sale.id }}</td>
+                <td>{{ sale.date.strftime('%b %d, %H:%M') }}</td>
+                <td class="fw-bold">{{ sale.customer.name if sale.customer else 'Walk-in' }}</td>
+                
+                <!-- Display Product Names -->
+                <td>
+                    <ul class="mb-0 list-unstyled">
+                    {% for item in sale.items %}
+                        <li>{{ item.quantity | qty }}x {{ item.product.name }}</li>
+                    {% endfor %}
+                    </ul>
+                </td>
+                
+                <td>
+                    {% if sale.sale_type == 'Normal' %}
+                        <span class="badge bg-success">Normal</span>
+                    {% else %}
+                        <span class="badge bg-danger">Debt</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if sale.status == 'Completed' %}
+                        <span class="badge bg-success">Completed</span>
+                    {% else %}
+                        <span class="badge bg-danger">Cancelled</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary fw-bold" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Actions for sale #{{ sale.id }}">
+                            &#8942;
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            {% if sale.status == 'Completed' %}
+                            <li>
+                                <form action="/sales/cancel/{{ sale.id }}" method="POST" onsubmit="return confirm('Are you sure you want to return these items and cancel the sale?');" data-offline="true">
+                                    <button type="submit" class="dropdown-item">Return items</button>
+                                </form>
+                            </li>
+                            {% endif %}
+                            <li>
+                                <form action="/sales/delete/{{ sale.id }}" method="POST" onsubmit="return confirm('Permanently delete this sales record?');" data-offline="true">
+                                    <button type="submit" class="dropdown-item text-danger">Delete</button>
+                                </form>
+                            </li>
+                        </ul>
+                    </div>
+                </td>
+                <!-- Strikeout Cancelled Totals -->
+                <td class="fw-bold">
+                    {% if sale.status == 'Cancelled' %}
+                        <del class="text-muted">{{ sale.total_amount | currency }}</del>
+                    {% else %}
+                        {{ sale.total_amount | currency }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    attachTableSearch('salesSearchInput', '#salesTable tbody tr[data-search]');
+    const searchInput = document.getElementById('productSearchInput');
+    const select = document.getElementById('productSelect');
+    const suggestionBox = document.getElementById('productSuggestions');
+    const options = Array.from(select.options).filter(o => o.value !== "");
+
+    function clearSuggestions() {
+        suggestionBox.innerHTML = "";
+        suggestionBox.style.display = "none";
+    }
+
+    function renderSuggestions(filter) {
+        clearSuggestions();
+        if (!filter) return;
+
+        const matches = options.filter(o => o.text.toLowerCase().includes(filter.toLowerCase()));
+        if (matches.length === 0) return;
+
+        matches.slice(0, 8).forEach(function (opt, idx) {
+            const item = document.createElement('button');
+            item.type = "button";
+            item.className = "list-group-item list-group-item-action py-1 px-2 small" + (idx === 0 ? " active" : "");
+            item.textContent = opt.text;
+            item.dataset.value = opt.value;
+            item.addEventListener('click', function () {
+                selectProduct(opt.value, opt.text);
+            });
+            suggestionBox.appendChild(item);
+        });
+        suggestionBox.style.display = "block";
+    }
+
+    function selectProduct(value, text) {
+        select.value = value;
+        searchInput.value = text;
+        clearSuggestions();
+    }
+
+    // Typing filters both the visible dropdown (old behavior) and the new suggestion list
+    searchInput.addEventListener('input', function (e) {
+        const filter = e.target.value.toLowerCase();
+        for (let option of select.options) {
+            if (option.value === "") continue;
+            option.style.display = option.text.toLowerCase().includes(filter) ? '' : 'none';
+        }
+        renderSuggestions(e.target.value);
+    });
+
+    // Enter picks the top suggestion instead of trying (and failing) to submit the form
+    searchInput.addEventListener('keydown', function (e) {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            const active = suggestionBox.querySelector('.list-group-item.active') || suggestionBox.querySelector('.list-group-item');
+            if (active) {
+                selectProduct(active.dataset.value, active.textContent);
+            }
+        }
+    });
+
+    // Click elsewhere closes the suggestion list
+    document.addEventListener('click', function (e) {
+        if (!suggestionBox.contains(e.target) && e.target !== searchInput) {
+            clearSuggestions();
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2 class="mb-4 fw-bold">Record Payments</h2>
+
+<!-- Add Payment Card -->
+<div class="erp-card shadow-sm mb-4 border-info">
+    <form method="POST" action="/payments" class="row g-3" data-offline="true">
+        <div class="col-md-6">
+            <label class="form-label">Select Active Debt</label>
+            <select name="debt_id" class="form-select" required>
+                <option value="">-- Choose Account --</option>
+                {% for debt in debts %}
+                <option value="{{ debt.id }}">
+                    {{ debt.customer.name }} | Balance: {{ debt.balance | currency }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">Payment Amount</label>
+            <div class="input-group">
+                <span class="input-group-text">Ksh</span>
+                <input type="number" step="0.01" name="amount" class="form-control" required>
+            </div>
+        </div>
+        <div class="col-md-2 d-flex align-items-end">
+            <button type="submit" class="btn btn-info w-100 text-white fw-bold">Receive</button>
+        </div>
+    </form>
+</div>
+
+<!-- Payment History Table -->
+<div class="erp-card shadow-sm">
+    <h5 class="mb-3">Recent Payments Log</h5>
+    <input type="text" id="paymentsSearchInput" class="form-control mb-3" placeholder="Search by customer...">
+    <table class="table table-hover align-middle" id="paymentsTable">
+        <thead class="table-dark">
+            <tr>
+                <th>Receipt #</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Amount Paid</th>
+                <th class="text-center">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for payment in payments %}
+            <tr data-search="{{ payment.debt.customer.name }}">
+                <td>#{{ payment.id }}</td>
+                <td>{{ payment.date.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td class="fw-bold">{{ payment.debt.customer.name }}</td>
+                <td class="text-success fw-bold">+{{ payment.amount | currency }}</td>
+                <td class="text-center">
+                    <form action="/payments/delete/{{ payment.id }}" method="POST" onsubmit="return confirm('Permanently delete this payment record?');" data-offline="true">
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<script>document.addEventListener('DOMContentLoaded', function () { attachTableSearch('paymentsSearchInput', '#paymentsTable tbody tr[data-search]'); });</script>
+{% endblock %}

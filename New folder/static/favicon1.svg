@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Timos ERP favicon: a wrench crossed with a gear, in the app's
+       steel/ochre palette (matches static/css/style.css --steel-dark / --ochre) -->
+  <rect width="64" height="64" rx="12" fill="#1C2E38"/>
+
+  <!-- Gear (ochre) -->
+  <g fill="#BE7F2E">
+    <circle cx="24" cy="24" r="10"/>
+    <g>
+      <rect x="21.5" y="6"  width="5" height="8" rx="1.5"/>
+      <rect x="21.5" y="34" width="5" height="8" rx="1.5"/>
+      <rect x="6"  y="21.5" width="8" height="5" rx="1.5"/>
+      <rect x="34" y="21.5" width="8" height="5" rx="1.5"/>
+      <rect x="10.5" y="10.5" width="5" height="8" rx="1.5" transform="rotate(-45 13 14.5)"/>
+      <rect x="10.5" y="29.5" width="5" height="8" rx="1.5" transform="rotate(45 13 33.5)"/>
+      <rect x="32.5" y="10.5" width="5" height="8" rx="1.5" transform="rotate(45 35 14.5)"/>
+      <rect x="32.5" y="29.5" width="5" height="8" rx="1.5" transform="rotate(-45 35 33.5)"/>
+    </g>
+  </g>
+  <circle cx="24" cy="24" r="4.5" fill="#1C2E38"/>
+
+  <!-- Wrench (paper/white), crossing diagonally over the gear -->
+  <g fill="#EFEBE1">
+    <path d="M38 30
+             a8 8 0 0 1 11.3 11.3
+             L57 49
+             a3 3 0 0 1 -4.2 4.2
+             L45 45.5
+             a8 8 0 0 1 -11.3 -11.3
+             l1.8 1.8
+             a5 5 0 0 0 7 -7
+             a5 5 0 0 0 -7 -0.3
+             z"/>
+  </g>
+</svg>
