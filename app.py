@@ -2,6 +2,8 @@ import re
 import csv
 import os
 import io
+import json
+import math
 import secrets
 import atexit
 from functools import wraps
@@ -12,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, text
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from flask_migrate import Migrate
-from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, ServiceBooking, ToolLoan, SMSLog
+from models import db, get_eat_time, User, Customer, Debt, Payment, Product, Sale, SaleItem, ReturnItem, ServiceBooking, ToolLoan, SMSLog, InventoryImport, AppSetting
 from apscheduler.schedulers.background import BackgroundScheduler
 from mobitech_service import send_sms
 
@@ -238,22 +240,128 @@ TECHNICIAN_NAME = "Samuel Githae"
 TECHNICIAN_PHONE = "0721276345"
 
 # -------------------
+# SMS on/off switches (the "SMS Settings" page)
+# -------------------
+# One master switch ("sms_enabled") that stops ALL automatic SMS, plus one
+# switch per kind of SMS. Every switch is ON until someone turns it off, so
+# nothing changes for you until you flip one. The switch positions are saved
+# in the database (app_setting table), so they survive restarts and deploys.
+# Each entry is: (setting name, label shown on the page, description).
+SMS_SWITCHES = [
+    ("sms_debt_reminders", "Debt reminders",
+     "A text every 24 hours to each customer who still owes money."),
+    ("sms_booking_reminders", "Booking reminders",
+     f"Appointment reminders to the customer and to {TECHNICIAN_NAME} ({TECHNICIAN_PHONE})."),
+    ("sms_low_stock_alerts", "Low stock alerts",
+     f"A text to {TECHNICIAN_NAME} ({TECHNICIAN_PHONE}) listing items that are running low."),
+]
+
+def get_setting(key, default=None):
+    row = AppSetting.query.get(key)
+    if row is None or row.value is None:
+        return default
+    return row.value
+
+def set_setting(key, value):
+    """Saves a setting. Does NOT commit: the caller commits."""
+    row = AppSetting.query.get(key)
+    if row is None:
+        db.session.add(AppSetting(key=key, value=str(value)))
+    else:
+        row.value = str(value)
+
+def sms_switch_on(key):
+    """True unless someone has switched this one off (everything starts ON)."""
+    return get_setting(key, "1") != "0"
+
+# -------------------
+# Low stock alert
+# -------------------
+# "Low" means the same as on the Inventory page: more than 0 but fewer than
+# 10 left. Items at exactly 0 are "out of stock" and are only counted in the
+# message, not listed. Change these three numbers to tune the alert.
+LOW_STOCK_THRESHOLD = 10          # fewer than this many left = "low"
+LOW_STOCK_ALERT_EVERY_HOURS = 24  # at most one alert per this many hours
+LOW_STOCK_MAX_SMS_CHARS = 300     # keeps the text to about two SMS segments
+
+def build_low_stock_message(low_items, out_count):
+    """Builds the SMS text: how many items are low, how many are out of
+    stock, then as many item names as fit ("+N more" covers the rest)."""
+    head = f"Timos low stock: {len(low_items)} item(s) running low"
+    if out_count:
+        head += f", {out_count} out of stock"
+    head += ". Lowest: "
+
+    shown = []
+    for p in low_items:
+        entry = f"{p.name} ({fmt_qty(p.stock)})"
+        hidden_after = len(low_items) - len(shown) - 1
+        suffix = (f" +{hidden_after} more." if hidden_after else ".") + " Please restock."
+        if shown and len(head + ", ".join(shown + [entry]) + suffix) > LOW_STOCK_MAX_SMS_CHARS:
+            break
+        shown.append(entry)
+
+    hidden = len(low_items) - len(shown)
+    suffix = (f" +{hidden} more." if hidden else ".") + " Please restock."
+    return head + ", ".join(shown) + suffix
+
+def send_low_stock_alert_if_due(now):
+    """Texts the technician a summary of low-stock items, at most once every
+    LOW_STOCK_ALERT_EVERY_HOURS hours, and only when something is actually low.
+    Does NOT commit: the caller commits."""
+    last_sent_raw = get_setting("low_stock_last_sent")
+    if last_sent_raw:
+        try:
+            if (now - datetime.fromisoformat(last_sent_raw)) < timedelta(hours=LOW_STOCK_ALERT_EVERY_HOURS):
+                return  # already alerted recently
+        except ValueError:
+            pass  # unreadable note: treat it as "never sent"
+
+    low_items = (
+        Product.query.filter(Product.stock > 0, Product.stock < LOW_STOCK_THRESHOLD)
+        .order_by(Product.stock.asc(), Product.name.asc())
+        .all()
+    )
+    if not low_items:
+        return  # nothing running low, nothing to say
+
+    out_count = Product.query.filter(Product.stock <= 0).count()
+    message = build_low_stock_message(low_items, out_count)
+
+    success, status_label, error_detail = send_sms(TECHNICIAN_PHONE, message)
+    db.session.add(SMSLog(
+        recipient_name=TECHNICIAN_NAME, phone_number=TECHNICIAN_PHONE, message=message,
+        category="Low Stock Alert", channel="SMS", status=status_label,
+        error_detail=error_detail, date_sent=get_eat_time()
+    ))
+    set_setting("low_stock_last_sent", now.isoformat())
+    print(f"[REMINDER] Low stock alert ({len(low_items)} low, {out_count} out) sent to {TECHNICIAN_NAME} — SMS {status_label}")
+
+# -------------------
 # Background Job: Reminders
 # -------------------
 def process_reminders():
-    """Background task checking for booked appointments & active debts"""
+    """Background task checking for booked appointments, active debts and low stock"""
     with app.app_context():
+        # Master switch (SMS Settings page). When it's OFF nothing is sent,
+        # nothing is logged, and no "last reminded" times move forward, so
+        # when it's switched back on, whatever is due simply goes out then.
+        if not sms_switch_on("sms_enabled"):
+            return
+
         now = get_eat_time()
 
         # 1. Appointment Reminders — each booking has its own custom lead
         # time (reminder_lead_hours), set individually when it was created,
         # instead of a fixed 24 hours for every booking. Fires once per
         # booking, to both the customer and the technician.
-        upcoming_bookings = ServiceBooking.query.filter(
-            ServiceBooking.booking_date > now,
-            ServiceBooking.reminder_sent == False,
-            ServiceBooking.status.in_(['Pending', 'Confirmed'])
-        ).all()
+        upcoming_bookings = []
+        if sms_switch_on("sms_booking_reminders"):
+            upcoming_bookings = ServiceBooking.query.filter(
+                ServiceBooking.booking_date > now,
+                ServiceBooking.reminder_sent == False,
+                ServiceBooking.status.in_(['Pending', 'Confirmed'])
+            ).all()
 
         for b in upcoming_bookings:
             lead_hours = b.reminder_lead_hours if b.reminder_lead_hours is not None else 24
@@ -297,7 +405,9 @@ def process_reminders():
         # stays Active, instead of sending just once. Tracks the last time
         # each debt was reminded about (last_reminder_sent) rather than a
         # one-shot yes/no flag.
-        active_debts = Debt.query.filter(Debt.status == 'Active').all()
+        active_debts = []
+        if sms_switch_on("sms_debt_reminders"):
+            active_debts = Debt.query.filter(Debt.status == 'Active').all()
 
         for d in active_debts:
             last_sent = d.last_reminder_sent or d.date_taken
@@ -323,6 +433,18 @@ def process_reminders():
             d.last_reminder_sent = now
 
         db.session.commit()
+
+        # 3. Low Stock Alert — to the technician, at most once every 24 hours.
+        # Done in its own step (with its own save) so that if anything goes
+        # wrong here, the debt and booking reminders above are already safely
+        # recorded and can't be re-sent.
+        if sms_switch_on("sms_low_stock_alerts"):
+            try:
+                send_low_stock_alert_if_due(now)
+                db.session.commit()
+            except Exception as e:
+                db.session.rollback()
+                print(f"[REMINDER] Low stock alert step failed: {e}")
 
 # --- Reminder job: guarded against double-firing across multiple worker
 # processes (e.g. if this is ever deployed with more than one gunicorn
@@ -668,7 +790,18 @@ def inventory():
     all_products = products
     total_valuation = sum(p.purchase_price * p.stock for p in all_products)
 
-    return render_template("inventory.html", products=products, all_products=all_products, total_valuation=total_valuation)
+    # The most recent CSV import that hasn't been undone yet. If there is
+    # one, the page shows an "Undo Last Import" button for it.
+    last_import = (
+        InventoryImport.query.filter_by(undone=False)
+        .order_by(InventoryImport.id.desc())
+        .first()
+    )
+
+    return render_template(
+        "inventory.html", products=products, all_products=all_products,
+        total_valuation=total_valuation, last_import=last_import
+    )
 
 @app.route("/inventory/edit/<int:id>", methods=["POST"])
 @login_required
@@ -717,10 +850,44 @@ def delete_inventory(id):
         flash("Cannot delete product because it exists in past transaction logs. Consider editing stock to 0 instead.", "danger")
     return redirect("/inventory")
 
+def _parse_import_number(raw):
+    """
+    Turns one CSV cell into a number.
+      - A blank cell counts as 0, meaning "the file didn't give me a value".
+      - Spreadsheet-style extras like "KSh 1,250.00" are tolerated.
+      - Raises ValueError if the cell holds something that isn't a real number.
+    """
+    if raw is None:
+        return 0.0
+    cleaned = str(raw).strip().lower().replace("ksh", "").replace(",", "").strip()
+    if cleaned == "":
+        return 0.0
+    value = float(cleaned)
+    if not math.isfinite(value):
+        raise ValueError("not a finite number")
+    return value
+
+
 @app.route("/inventory/import", methods=["POST"])
 @login_required
 @admin_required
 def import_inventory():
+    """
+    Imports products from a CSV file.
+
+    For a product that ALREADY exists:
+      - Purchase price and selling price are OVERWRITTEN with the file's values.
+        (If the file leaves a price blank or 0, that price is treated as "not
+        supplied" and the current price is kept, so a gap in the spreadsheet
+        can never wipe out a real price.)
+      - Stock is INCREMENTED: the file's stock is added on top of what is
+        already there, it never replaces it.
+    For a product that does NOT exist yet, it is created (this needs both
+    prices to be greater than zero, same as the manual "Add Product" form).
+
+    Before anything is changed, what each product looked like is saved in an
+    InventoryImport record, which is what the "Undo Last Import" button uses.
+    """
     file = request.files.get("file")
     if not file or file.filename == "":
         flash("Error: No file was selected.", "danger")
@@ -749,8 +916,10 @@ def import_inventory():
         return redirect("/inventory")
 
     added_count = 0
-    restocked_count = 0
+    updated_count = 0
+    prices_kept_count = 0
     skipped_rows = []
+    changes = {}  # product id -> how that product looked BEFORE this import (used by Undo)
 
     for row_num, row in enumerate(reader, start=2):  # row 1 is the header
         raw_name = (row.get("Product Name") or "").strip()
@@ -759,49 +928,200 @@ def import_inventory():
             continue
 
         try:
-            purchase_price = float(row.get("Purchase Price", 0))
-            selling_price = float(row.get("Selling Price", 0))
-            stock = float(row.get("Stock", 0))
+            purchase_price = _parse_import_number(row.get("Purchase Price"))
+            selling_price = _parse_import_number(row.get("Selling Price"))
+            stock = _parse_import_number(row.get("Stock"))
         except (ValueError, TypeError):
             skipped_rows.append(f"Row {row_num} ('{raw_name}'): one of the numbers isn't valid")
             continue
 
-        if purchase_price <= 0 or selling_price <= 0:
-            skipped_rows.append(f"Row {row_num} ('{raw_name}'): purchase/selling price must be greater than zero")
+        if purchase_price < 0 or selling_price < 0 or stock < 0:
+            skipped_rows.append(f"Row {row_num} ('{raw_name}'): prices and stock can't be negative")
             continue
 
-        min_sp = purchase_price * 0.5  # Fix: was purchase_price * 1.5
-        # Note: unlike the manual "add product" form, imported rows are NOT
-        # rejected for having a selling price below min_sp. The minimum is
-        # still calculated and stored on the product (so it still shows
-        # correctly everywhere else in the app) — it just doesn't block
-        # the import itself.
+        # Note: imported rows are NOT rejected for having a selling price
+        # below the minimum (purchase price x 0.5). The minimum is still
+        # calculated and stored so it shows correctly everywhere else.
 
         existing_product = Product.query.filter(Product.name.ilike(raw_name)).first()
+
         if existing_product:
-            existing_product.stock += stock
-            existing_product.purchase_price = purchase_price
-            existing_product.selling_price = selling_price
-            existing_product.min_selling_price = min_sp
-            restocked_count += 1
+            has_purchase = purchase_price > 0
+            has_selling = selling_price > 0
+
+            if not (has_purchase or has_selling or stock > 0):
+                skipped_rows.append(f"Row {row_num} ('{raw_name}'): nothing to update (no prices and no stock in the file)")
+                continue
+
+            # Save the "before" picture the first time this product is touched.
+            record = changes.get(existing_product.id)
+            if record is None:
+                record = {
+                    "product_id": existing_product.id,
+                    "name": existing_product.name,
+                    "was_new": False,
+                    "old_purchase_price": existing_product.purchase_price,
+                    "old_selling_price": existing_product.selling_price,
+                    "old_min_selling_price": existing_product.min_selling_price,
+                    "stock_added": 0.0,
+                }
+                changes[existing_product.id] = record
+                updated_count += 1
+
+            # Prices: the file wins (only when the file actually gives a price).
+            if has_purchase:
+                existing_product.purchase_price = purchase_price
+                existing_product.min_selling_price = purchase_price * 0.5
+            if has_selling:
+                existing_product.selling_price = selling_price
+            if not (has_purchase and has_selling):
+                prices_kept_count += 1
+
+            # Stock: always add on top of what's there.
+            existing_product.stock = (existing_product.stock or 0) + stock
+            record["stock_added"] += stock
         else:
+            if purchase_price <= 0 or selling_price <= 0:
+                skipped_rows.append(
+                    f"Row {row_num} ('{raw_name}'): new product needs a purchase and selling price greater than zero"
+                )
+                continue
+
             new_product = Product(
-                name=raw_name.title(), purchase_price=purchase_price, min_selling_price=min_sp,
+                name=raw_name.title(), purchase_price=purchase_price, min_selling_price=purchase_price * 0.5,
                 selling_price=selling_price, stock=stock
             )
             db.session.add(new_product)
+            db.session.flush()  # gives the new product its id so Undo can find it later
+            changes[new_product.id] = {
+                "product_id": new_product.id,
+                "name": new_product.name,
+                "was_new": True,
+                "stock_added": stock,
+            }
             added_count += 1
 
-    db.session.commit()
-
-    summary = f"Import complete: {added_count} new product(s) added, {restocked_count} restocked."
+    skipped_text = ""
     if skipped_rows:
         shown = "; ".join(skipped_rows[:5])
         more = f" (+{len(skipped_rows) - 5} more)" if len(skipped_rows) > 5 else ""
-        flash(f"{summary} Skipped {len(skipped_rows)} row(s): {shown}{more}", "warning")
-    else:
-        flash(summary, "success")
+        skipped_text = f" Skipped {len(skipped_rows)} row(s): {shown}{more}"
 
+    if not changes:
+        db.session.rollback()
+        flash(f"Import finished, but nothing was changed.{skipped_text}", "warning")
+        return redirect("/inventory")
+
+    try:
+        db.session.add(InventoryImport(
+            filename=(file.filename or "")[:255],
+            imported_by=current_user.username,
+            new_count=added_count,
+            updated_count=updated_count,
+            changes_json=json.dumps(list(changes.values())),
+        ))
+        db.session.commit()  # product changes + the undo record are saved together
+    except Exception:
+        db.session.rollback()
+        flash("Error: The import couldn't be saved, so nothing was changed. Please try again.", "danger")
+        return redirect("/inventory")
+
+    summary = f"Import complete: {added_count} new product(s) added, {updated_count} existing product(s) updated."
+    if prices_kept_count:
+        summary += f" {prices_kept_count} row(s) had a blank/zero price in the file, so that price was left as it was."
+    summary += " Not what you wanted? Use 'Undo Last Import'."
+    flash(summary + skipped_text, "warning" if skipped_rows else "success")
+
+    return redirect("/inventory")
+
+
+@app.route("/inventory/import/undo", methods=["POST"])
+@login_required
+@admin_required
+def undo_inventory_import():
+    """
+    Reverses the most recent CSV import that hasn't been undone yet:
+      - existing products get their old purchase price, selling price and
+        minimum price back, and the stock the import added is taken off again;
+      - products the import created are removed (unless they've already been
+        sold, in which case they're kept so sales history isn't damaged, and
+        just have the imported stock taken off).
+    Undoing repeatedly walks backwards through the imports, newest first.
+    """
+    last_import = (
+        InventoryImport.query.filter_by(undone=False)
+        .order_by(InventoryImport.id.desc())
+        .first()
+    )
+    if not last_import:
+        flash("Nothing to undo: there is no recent import.", "warning")
+        return redirect("/inventory")
+
+    try:
+        changes = json.loads(last_import.changes_json or "[]")
+    except ValueError:
+        flash("Error: This import's undo record is damaged, so it can't be reversed automatically.", "danger")
+        return redirect("/inventory")
+
+    restored_count = 0
+    removed_count = 0
+    kept_count = 0      # new products that couldn't be removed because they have sales
+    missing_count = 0   # products that were deleted after the import
+    zeroed_count = 0    # products that had already sold more than they had before the import
+
+    try:
+        for change in changes:
+            product = Product.query.get(change["product_id"])
+            if not product:
+                missing_count += 1
+                continue
+
+            stock_added = change.get("stock_added", 0.0) or 0.0
+            stock_after_undo = round((product.stock or 0) - stock_added, 4)
+            went_below_zero = stock_after_undo < 0
+            if went_below_zero:
+                stock_after_undo = 0
+
+            if change.get("was_new"):
+                has_history = (
+                    SaleItem.query.filter_by(product_id=product.id).first()
+                    or ReturnItem.query.filter_by(product_id=product.id).first()
+                )
+                if not has_history:
+                    db.session.delete(product)
+                    removed_count += 1
+                    continue
+                product.stock = stock_after_undo
+                kept_count += 1
+            else:
+                product.purchase_price = change["old_purchase_price"]
+                product.selling_price = change["old_selling_price"]
+                product.min_selling_price = change["old_min_selling_price"]
+                product.stock = stock_after_undo
+                restored_count += 1
+
+            if went_below_zero:
+                zeroed_count += 1
+
+        last_import.undone = True
+        last_import.date_undone = get_eat_time()
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        flash("Error: The undo couldn't be completed, so nothing was changed. Please try again.", "danger")
+        return redirect("/inventory")
+
+    message = (
+        f"Import undone: {restored_count} product(s) put back to their old prices and stock, "
+        f"{removed_count} newly added product(s) removed."
+    )
+    if kept_count:
+        message += f" {kept_count} new product(s) were kept because they already have sales (their imported stock was removed)."
+    if zeroed_count:
+        message += f" {zeroed_count} product(s) had already sold more than they had before the import, so their stock was set to 0."
+    if missing_count:
+        message += f" {missing_count} product(s) no longer exist and were skipped."
+    flash(message, "success")
     return redirect("/inventory")
 
 @app.route("/return_item", methods=["POST"])
@@ -1101,6 +1421,41 @@ def send_test_sms():
         flash(f"Test SMS to {phone} failed: {error_detail or 'unknown error'}", "danger")
 
     return redirect("/reports")
+
+@app.route("/sms-settings")
+@login_required
+@admin_required
+def sms_settings():
+    switches = [
+        {"key": key, "label": label, "description": description, "on": sms_switch_on(key)}
+        for key, label, description in SMS_SWITCHES
+    ]
+    return render_template(
+        "sms_settings.html", master_on=sms_switch_on("sms_enabled"), switches=switches
+    )
+
+@app.route("/sms-settings/toggle", methods=["POST"])
+@login_required
+@admin_required
+def toggle_sms_setting():
+    key = request.form.get("key", "")
+    labels = {k: label for k, label, _description in SMS_SWITCHES}
+    if key != "sms_enabled" and key not in labels:
+        flash("Error: Unknown SMS setting.", "danger")
+        return redirect("/sms-settings")
+
+    turn_on = request.form.get("state") == "1"
+    set_setting(key, "1" if turn_on else "0")
+    db.session.commit()
+
+    if key == "sms_enabled":
+        if turn_on:
+            flash("SMS sending is now ON. Any reminders that are due will go out within a minute.", "success")
+        else:
+            flash("SMS sending is now OFF. No automatic SMS will be sent until you turn it back on.", "warning")
+    else:
+        flash(f"{labels[key]} turned {'ON' if turn_on else 'OFF'}.", "success" if turn_on else "warning")
+    return redirect("/sms-settings")
 
 @app.route("/analytics")
 @login_required

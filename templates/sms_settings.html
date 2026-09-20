@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">SMS Settings</h2>
+</div>
+
+<!-- Master switch: stops ALL automatic SMS when OFF -->
+<div class="erp-card shadow-sm mb-4 border-start border-4 {{ 'border-success' if master_on else 'border-danger' }}">
+    <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-3">
+        <div>
+            <h5 class="mb-1">
+                All SMS Sending
+                <span class="badge {{ 'bg-success' if master_on else 'bg-danger' }} ms-2">{{ 'ON' if master_on else 'OFF' }}</span>
+            </h5>
+            <p class="text-muted mb-0">
+                The master switch. When it is OFF, the app sends no automatic SMS at all,
+                whatever the individual switches below are set to.
+            </p>
+        </div>
+        <form method="POST" action="/sms-settings/toggle"{% if master_on %} onsubmit="return confirm('Turn OFF all SMS sending?');"{% endif %}>
+            <input type="hidden" name="key" value="sms_enabled">
+            <input type="hidden" name="state" value="{{ '0' if master_on else '1' }}">
+            <button type="submit" class="btn {{ 'btn-outline-danger' if master_on else 'btn-success' }} fw-bold">
+                <i class="fas fa-power-off me-1"></i> {{ 'Turn OFF' if master_on else 'Turn ON' }}
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- One switch per kind of SMS -->
+<div class="erp-card shadow-sm mb-4">
+    <div class="card-body p-0">
+        <ul class="list-group list-group-flush">
+            {% for s in switches %}
+            <li class="list-group-item d-flex justify-content-between align-items-center flex-wrap gap-3 py-3"{% if not master_on %} style="opacity: 0.6;"{% endif %}>
+                <div>
+                    <h6 class="mb-1 fw-bold">
+                        {{ s.label }}
+                        <span class="badge {{ 'bg-success' if s.on else 'bg-secondary' }} ms-2">{{ 'ON' if s.on else 'OFF' }}</span>
+                        {% if not master_on %}<span class="badge bg-warning text-dark ms-1">Paused by master switch</span>{% endif %}
+                    </h6>
+                    <div class="text-muted small">{{ s.description }}</div>
+                </div>
+                <form method="POST" action="/sms-settings/toggle">
+                    <input type="hidden" name="key" value="{{ s.key }}">
+                    <input type="hidden" name="state" value="{{ '0' if s.on else '1' }}">
+                    <button type="submit" class="btn btn-sm {{ 'btn-outline-secondary' if s.on else 'btn-outline-success' }} fw-bold">
+                        {{ 'Turn OFF' if s.on else 'Turn ON' }}
+                    </button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+<div class="small text-muted">
+    <p class="mb-1">Turning a switch off doesn't delete anything. When you turn it back on, reminders that are due go out within a minute (debt reminders that were due while it was off will all be sent then).</p>
+    <p class="mb-0">The "Send Test SMS" button on the Reports page still works when sending is switched off, so you can always check your SMS setup.</p>
+</div>
+{% endblock %}

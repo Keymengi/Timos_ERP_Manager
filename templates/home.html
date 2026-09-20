@@ -128,5 +128,20 @@
             </div>
         </div>
     </div>
+
+    {% if current_user.role == 'Admin' %}
+    <!-- SMS Settings -->
+    <div class="col-md-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-body d-flex flex-column justify-content-between">
+                <div>
+                    <h5 class="card-title fw-bold text-dark">SMS Settings</h5>
+                    <p class="card-text text-muted small">Switch debt, booking and low stock text messages on or off.</p>
+                </div>
+                <a href="/sms-settings" class="btn btn-outline-secondary mt-3 w-100">Open SMS Settings</a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

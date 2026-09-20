@@ -158,7 +158,7 @@ class SMSLog(db.Model):
     recipient_name = db.Column(db.String(120), nullable=True)
     phone_number = db.Column(db.String(20), nullable=True)
     message = db.Column(db.Text, nullable=False)
-    category = db.Column(db.String(30), nullable=False)  # 'Debt Reminder', 'Booking Reminder', 'Technician Reminder', or 'Test'
+    category = db.Column(db.String(30), nullable=False)  # 'Debt Reminder', 'Booking Reminder', 'Technician Reminder', 'Low Stock Alert', or 'Test'
     channel = db.Column(db.String(20), default="SMS")  # 'SMS' (was 'WhatsApp' on older rows)
     status = db.Column(db.String(20), default="Sent")  # 'Sent', 'Failed', 'Console'
     error_detail = db.Column(db.String(255), nullable=True)  # why a 'Failed' send failed
@@ -177,3 +177,29 @@ class ToolLoan(db.Model):
     status = db.Column(db.String(20), default="Active")
 
     customer = db.relationship("Customer", backref="tool_loans", lazy=True)
+
+# -------------------
+# Inventory CSV Import History (powers the "Undo Last Import" button)
+# -------------------
+class InventoryImport(db.Model):
+    __tablename__ = "inventory_import"
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=True)
+    imported_by = db.Column(db.String(50), nullable=True)
+    date_imported = db.Column(db.DateTime, default=get_eat_time)
+    new_count = db.Column(db.Integer, default=0)      # products the import created
+    updated_count = db.Column(db.Integer, default=0)  # existing products the import changed
+    # A list of "what this product looked like before the import", stored as
+    # JSON text. Undo reads this list to put every product back exactly as it was.
+    changes_json = db.Column(db.Text, nullable=False, default="[]")
+    undone = db.Column(db.Boolean, default=False)
+    date_undone = db.Column(db.DateTime, nullable=True)
+
+# -------------------
+# App Settings (small on/off switches and "last time X happened" notes)
+# -------------------
+class AppSetting(db.Model):
+    __tablename__ = "app_setting"
+    key = db.Column(db.String(50), primary_key=True)
+    value = db.Column(db.String(255), nullable=True)
+

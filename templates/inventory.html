@@ -4,13 +4,22 @@
 <!-- Page Header with Import and Export Buttons -->
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="fw-bold mb-0">Inventory Management</h2>
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap justify-content-end">
         <button type="button" class="btn btn-outline-danger fw-bold shadow-sm" onclick="exportOutOfStockCSV()">
             <i class="fas fa-box-open me-1"></i> Export Out of Stock
         </button>
         <button type="button" class="btn btn-outline-primary fw-bold shadow-sm" data-bs-toggle="modal" data-bs-target="#importModal">
             <i class="fas fa-file-import me-1"></i> Import CSV File
         </button>
+        {% if last_import %}
+        <!-- Only shown when there is a CSV import that can still be undone. Needs internet, so no data-offline. -->
+        {% set undo_confirm_text = 'Undo the import of "' ~ (last_import.filename or 'your CSV file') ~ '"' ~ (' from ' ~ last_import.date_imported.strftime('%d %b %Y, %H:%M') if last_import.date_imported else '') ~ '? This puts the old prices back and takes off the stock that import added.' %}
+        <form method="POST" action="/inventory/import/undo" class="d-inline" onsubmit='return confirm({{ undo_confirm_text | tojson }});'>
+            <button type="submit" class="btn btn-outline-warning fw-bold shadow-sm" title="Reverse the last CSV import">
+                <i class="fas fa-undo me-1"></i> Undo Last Import
+            </button>
+        </form>
+        {% endif %}
         <a href="/export/inventory" class="btn btn-outline-secondary fw-bold shadow-sm">
             <i class="fas fa-file-export me-1"></i> Export CSV
         </a>
@@ -218,7 +227,10 @@
                  <label class="form-label fw-bold">Select Inventory CSV File (.csv)</label>
                  <input type="file" name="file" class="form-control" accept=".csv" required>
                  <div class="form-text mt-2">
-                     Supports structured `.csv` files.
+                     Supports structured `.csv` files. For products already in your inventory, the
+                     file's <strong>purchase and selling prices replace</strong> the current ones
+                     (a blank or 0 price is ignored) and the file's <strong>stock is added</strong> to
+                     what you already have. Made a mistake? Use <strong>Undo Last Import</strong> afterwards.
                  </div>
               </div>
           </div>
